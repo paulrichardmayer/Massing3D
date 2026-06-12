@@ -2,18 +2,6 @@
 
 A web-based 3D ideation tool for industrial designers. Draw 2D orthographic sketches (Top, Front, Side) and Massing3D automatically generates 3D volumes via boolean intersections of the extruded profiles — rapid visualization, fun ideation, and quick mesh export (OBJ/STL). Optimized for both mouse and tablet/stylus (iPad) input.
 
-## Running
-
-It's a static site — no build step. Serve the folder with any static server:
-
-```sh
-npx http-server . -p 8080
-# or
-python -m http.server 8080
-```
-
-Then open `http://localhost:8080`. (Three.js, three-bvh-csg, and Tailwind load from CDN, so an internet connection is required.)
-
 ## How it works
 
 - Each **layer** is a 3D bounding box. New layers stack on top of the previous one and can be dragged/snapped against other boxes with the Select/Move tool.
