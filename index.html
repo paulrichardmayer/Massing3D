@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Massing3D — Industrial Design Massing Tool</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="css/styles.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/",
+      "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js",
+      "three-bvh-csg": "https://cdn.jsdelivr.net/npm/three-bvh-csg@0.0.17/build/index.module.js"
+    }
+  }
+  </script>
+</head>
+<body class="bg-zinc-950 text-zinc-200 h-screen w-screen overflow-hidden select-none antialiased">
+  <div id="app" class="relative h-full w-full">
+
+    <!-- ============ Viewport grid (adaptive 2x2) ============ -->
+    <div id="viewport-grid" class="absolute inset-0 flex flex-col gap-px bg-black">
+      <div class="vp-row flex flex-1 gap-px min-h-0" data-row="top">
+        <div class="viewport relative flex-1 min-w-0 min-h-0 bg-zinc-900 overflow-hidden" data-view="top">
+          <div class="vp-header" data-tip="Double-click to maximize">Top View</div>
+          <canvas class="sketch-canvas absolute inset-0 w-full h-full touch-none"></canvas>
+        </div>
+        <div class="viewport relative flex-1 min-w-0 min-h-0 bg-zinc-900 overflow-hidden" data-view="persp">
+          <div class="vp-header" data-tip="Double-click to maximize">Perspective View</div>
+          <div id="persp-container" class="absolute inset-0 touch-none"></div>
+        </div>
+      </div>
+      <div class="vp-row flex flex-1 gap-px min-h-0" data-row="bottom">
+        <div class="viewport relative flex-1 min-w-0 min-h-0 bg-zinc-900 overflow-hidden" data-view="front">
+          <div class="vp-header" data-tip="Double-click to maximize">Front View</div>
+          <canvas class="sketch-canvas absolute inset-0 w-full h-full touch-none"></canvas>
+        </div>
+        <div class="viewport relative flex-1 min-w-0 min-h-0 bg-zinc-900 overflow-hidden" data-view="side">
+          <div class="vp-header" data-tip="Double-click to maximize">Side View</div>
+          <canvas class="sketch-canvas absolute inset-0 w-full h-full touch-none"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ Top-Center menu ============ -->
+    <div id="menu-top" class="floating-menu fixed top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-2 py-1.5">
+      <div class="flex items-center gap-2 pr-2 mr-1 border-r border-zinc-700">
+        <svg class="w-5 h-5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <path d="M12 2 3 7v10l9 5 9-5V7l-9-5Z"/><path d="M3 7l9 5 9-5M12 12v10"/>
+        </svg>
+        <span class="font-semibold tracking-tight text-sm text-zinc-100">Massing3D</span>
+      </div>
+      <button id="btn-new" class="menu-btn" data-tip="New File — clear everything">
+        <svg viewBox="0 0 24 24"><path d="M13 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9l-6-6Z"/><path d="M13 3v6h6"/></svg>
+        <span>New</span>
+      </button>
+      <button id="btn-save" class="menu-btn" data-tip="Save project as .json">
+        <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+        <span>Save</span>
+      </button>
+      <button id="btn-open" class="menu-btn" data-tip="Open a saved .json project">
+        <svg viewBox="0 0 24 24"><path d="M3 7v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-8L9 4H5a2 2 0 0 0-2 2Z"/></svg>
+        <span>Open</span>
+      </button>
+      <button id="btn-export-obj" class="menu-btn" data-tip="Export mesh as OBJ">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <span>OBJ</span>
+      </button>
+      <button id="btn-export-stl" class="menu-btn" data-tip="Export mesh as STL">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <span>STL</span>
+      </button>
+      <button id="btn-share" class="menu-btn" data-tip="Copy a shareable link (sketches & boxes; underlay images not included)">
+        <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>
+        <span>Share</span>
+      </button>
+    </div>
+
+    <!-- ============ Center-Center floating layer strip ============ -->
+    <div id="menu-layers" class="floating-menu fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 flex items-center gap-1 px-2 py-1.5">
+      <span class="text-[10px] uppercase tracking-wider text-zinc-500 px-1">Layers</span>
+      <div id="layer-chips" class="flex items-center gap-1"></div>
+      <button id="btn-add-layer" class="menu-btn !px-2" data-tip="Add a new 3D box layer (stacks on top)">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+
+    <!-- ============ Bottom-Center creation tools ============ -->
+    <div id="menu-bottom" class="floating-menu fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-2 py-1.5">
+      <button id="tool-nav" class="menu-btn tool-btn" data-tool="nav" data-tip="Navigate — pan & zoom the view">
+        <svg viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+      </button>
+      <button id="tool-select" class="menu-btn tool-btn" data-tool="select" data-tip="Select / Move box layer (W)">
+        <svg viewBox="0 0 24 24"><path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51L3 3Z"/></svg>
+      </button>
+      <button id="tool-bezier" class="menu-btn tool-btn" data-tool="bezier" data-tip="Bezier Line Tool (L) — click to place anchors, drag for handles, click first point to close">
+        <svg viewBox="0 0 24 24"><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><path d="M7 18C12 16 16 12 17.5 7"/><path d="M3 9h6M15 21h6" stroke-dasharray="2 2"/></svg>
+      </button>
+      <button id="tool-freehand" class="menu-btn tool-btn" data-tool="freehand" data-tip="Freehand Sketch Tool (F) — draw with mouse or stylus, auto-smoothed">
+        <svg viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3Z"/></svg>
+      </button>
+      <span class="menu-sep"></span>
+      <button id="toggle-symmetry" class="menu-btn" data-tip="Symmetry Mode (S) — mirror sketches across the vertical center of the box">
+        <svg viewBox="0 0 24 24"><path d="M12 3v18" stroke-dasharray="3 3"/><path d="M8 7 4 12l4 5M16 7l4 5-4 5"/></svg>
+      </button>
+      <span class="menu-sep"></span>
+      <button class="menu-btn view-toggle active" data-viewtoggle="top" data-tip="Toggle Top View">T</button>
+      <button class="menu-btn view-toggle active" data-viewtoggle="front" data-tip="Toggle Front View">F</button>
+      <button class="menu-btn view-toggle active" data-viewtoggle="side" data-tip="Toggle Side View">S</button>
+      <button class="menu-btn view-toggle active" data-viewtoggle="persp" data-tip="Toggle Perspective View">3D</button>
+    </div>
+
+    <!-- ============ Side contextual panel (active layer settings) ============ -->
+    <aside id="side-panel" class="fixed top-1/2 right-3 -translate-y-1/2 z-40 w-64 floating-menu !rounded-xl p-3 hidden flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <h3 id="panel-layer-name" class="text-sm font-semibold text-zinc-100">Layer</h3>
+        <button id="panel-close" class="menu-btn !px-1.5 !py-1" data-tip="Close panel">
+          <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div>
+        <div class="panel-label">Bounding Box Dimensions</div>
+        <div class="grid grid-cols-3 gap-1.5 mt-1">
+          <label class="dim-field"><span>W</span><input id="dim-w" type="number" min="1" step="any" /></label>
+          <label class="dim-field"><span>H</span><input id="dim-h" type="number" min="1" step="any" /></label>
+          <label class="dim-field"><span>D</span><input id="dim-d" type="number" min="1" step="any" /></label>
+        </div>
+        <select id="dim-units" class="mt-1.5 w-full bg-zinc-800 border border-zinc-700 rounded-md text-xs px-2 py-1">
+          <option value="mm">millimeters (mm)</option>
+          <option value="cm">centimeters (cm)</option>
+          <option value="m">meters (m)</option>
+        </select>
+      </div>
+
+      <div>
+        <div class="panel-label flex justify-between"><span>Fillet / Chamfer</span><span id="fillet-val" class="text-zinc-500">0</span></div>
+        <input id="fillet-slider" type="range" min="0" max="100" value="0" class="w-full" data-tip="Rounds the sharp edge intersections of this layer's mesh" />
+      </div>
+
+      <div>
+        <div class="panel-label">Reference Underlay</div>
+        <input id="underlay-file" type="file" accept="image/png,image/jpeg" class="hidden" />
+        <button id="btn-underlay" class="menu-btn w-full justify-center mt-1" data-tip="Upload a JPEG/PNG reference image — placed on the median cross-section plane">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.5-3.5L6 23"/></svg>
+          <span>Upload Image</span>
+        </button>
+        <div id="underlay-controls" class="hidden flex-col gap-2 mt-2">
+          <div class="flex gap-1">
+            <button class="menu-btn flex-1 justify-center underlay-plane" data-plane="xy" data-tip="Place on XY median plane (Front)">XY</button>
+            <button class="menu-btn flex-1 justify-center underlay-plane" data-plane="xz" data-tip="Place on XZ median plane (Top)">XZ</button>
+            <button class="menu-btn flex-1 justify-center underlay-plane" data-plane="yz" data-tip="Place on YZ median plane (Side)">YZ</button>
+          </div>
+          <div class="flex gap-1">
+            <button id="underlay-fliph" class="menu-btn flex-1 justify-center" data-tip="Flip underlay horizontally">Flip H</button>
+            <button id="underlay-flipv" class="menu-btn flex-1 justify-center" data-tip="Flip underlay vertically">Flip V</button>
+            <button id="underlay-remove" class="menu-btn flex-1 justify-center" data-tip="Remove underlay">✕</button>
+          </div>
+          <div>
+            <div class="panel-label flex justify-between"><span>Opacity</span><span id="underlay-opacity-val" class="text-zinc-500">40%</span></div>
+            <input id="underlay-opacity" type="range" min="5" max="100" value="40" class="w-full" />
+          </div>
+        </div>
+      </div>
+
+      <div class="flex gap-1.5 pt-1 border-t border-zinc-800">
+        <button id="btn-clear-sketches" class="menu-btn flex-1 justify-center" data-tip="Clear all sketches on this layer">Clear Sketches</button>
+        <button id="btn-delete-layer" class="menu-btn flex-1 justify-center !text-red-400" data-tip="Delete this layer">Delete</button>
+      </div>
+    </aside>
+
+    <!-- toast -->
+    <div id="toast" class="fixed bottom-16 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-xs text-zinc-200 opacity-0 pointer-events-none transition-opacity"></div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

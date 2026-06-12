@@ -1,0 +1,205 @@
+/* ============ Massing3D UI chrome ============ */
+
+.floating-menu {
+  background: rgba(24, 24, 27, 0.88);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(63, 63, 70, 0.8);
+  border-radius: 9999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+#side-panel {
+  border-radius: 0.75rem;
+}
+#side-panel:not(.hidden) {
+  display: flex;
+}
+
+.menu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.5rem;
+  font-size: 0.75rem;
+  color: #d4d4d8;
+  position: relative;
+  transition: background 120ms, color 120ms;
+}
+.menu-btn:hover {
+  background: rgba(63, 63, 70, 0.6);
+  color: #fafafa;
+}
+.menu-btn svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.menu-btn.active,
+.view-toggle.active {
+  background: rgba(14, 165, 233, 0.18);
+  color: #38bdf8;
+}
+.view-toggle:not(.active) {
+  color: #52525b;
+}
+.menu-sep {
+  width: 1px;
+  height: 1.1rem;
+  background: rgba(63, 63, 70, 0.9);
+  margin: 0 0.25rem;
+}
+
+/* ---- text tooltips ---- */
+[data-tip] {
+  position: relative;
+}
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%) translateY(2px);
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  color: #e4e4e7;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  padding: 0.3rem 0.55rem;
+  border-radius: 0.4rem;
+  white-space: nowrap;
+  max-width: 260px;
+  white-space: normal;
+  width: max-content;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 60;
+}
+[data-tip]:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  transition-delay: 350ms;
+}
+/* tooltips below for the top menu so they don't clip offscreen */
+#menu-top [data-tip]::after {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+
+/* ---- viewport headers ---- */
+.vp-header {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  z-index: 10;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #71717a;
+  background: rgba(24, 24, 27, 0.7);
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.vp-header:hover {
+  color: #e4e4e7;
+}
+.viewport.active-draw {
+  outline: 1px solid rgba(56, 189, 248, 0.35);
+  outline-offset: -1px;
+}
+
+/* ---- side panel fields ---- */
+.panel-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #a1a1aa;
+}
+.dim-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: 0.375rem;
+  padding: 2px 6px;
+}
+.dim-field span {
+  font-size: 0.65rem;
+  color: #71717a;
+}
+.dim-field input {
+  width: 100%;
+  background: transparent;
+  font-size: 0.75rem;
+  color: #e4e4e7;
+  outline: none;
+  min-width: 0;
+}
+input[type="range"] {
+  accent-color: #38bdf8;
+  height: 1rem;
+}
+
+/* ---- layer chips ---- */
+.layer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+  font-size: 0.72rem;
+  color: #d4d4d8;
+  background: rgba(39, 39, 42, 0.7);
+  border: 1px solid transparent;
+  cursor: pointer;
+  position: relative;
+}
+.layer-chip:hover {
+  background: rgba(63, 63, 70, 0.8);
+}
+.layer-chip.active {
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #7dd3fc;
+}
+.layer-chip .chip-eye {
+  opacity: 0.55;
+}
+.layer-chip .chip-eye:hover {
+  opacity: 1;
+}
+.layer-chip .chip-eye svg {
+  width: 0.8rem;
+  height: 0.8rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+}
+.layer-chip.hidden-layer {
+  opacity: 0.45;
+}
+
+/* fullscreen mode: hide menus */
+#app.maximized #menu-top,
+#app.maximized #menu-layers {
+  display: none;
+}
+
+canvas.sketch-canvas {
+  cursor: crosshair;
+}
+canvas.sketch-canvas.nav-cursor {
+  cursor: grab;
+}
+canvas.sketch-canvas.move-cursor {
+  cursor: move;
+}

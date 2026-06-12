@@ -1,0 +1,182 @@
+// Central app state, layer model, undo/redo, serialization.
+
+const UNIT_FACTORS = { mm: 1, cm: 10, m: 1000 }; // internal unit is mm
+
+const LAYER_COLORS = [0x60a5fa, 0xf472b6, 0x4ade80, 0xfbbf24, 0xa78bfa, 0x2dd4bf, 0xfb923c, 0xe879f9];
+
+let nextLayerId = 1;
+
+export const state = {
+  layers: [],
+  activeLayerId: null,
+  tool: 'freehand', // nav | select | bezier | freehand
+  symmetry: false,
+  units: 'mm',
+  visibleViews: { top: true, front: true, side: true, persp: true },
+  maximized: null, // view name or null
+};
+
+const listeners = { change: [], layers: [], mesh: [] };
+
+export function on(event, fn) { listeners[event].push(fn); }
+
+export function emit(event, payload) {
+  for (const fn of listeners[event]) fn(payload);
+}
+
+// Notify: 'change' redraws 2D views & UI; 'mesh' additionally rebuilds CSG meshes.
+export function touch(layer) { emit('change'); if (layer) emit('mesh', layer); }
+
+export function createLayer() {
+  const id = nextLayerId++;
+  const prev = state.layers[state.layers.length - 1];
+  const box = { w: 160, h: 80, d: 240 };
+  // New boxes stack on top of the previous one by default.
+  const position = prev
+    ? { x: prev.position.x, y: prev.position.y + prev.box.h / 2 + box.h / 2, z: prev.position.z }
+    : { x: 0, y: box.h / 2, z: 0 };
+  const layer = {
+    id,
+    name: `Layer ${id}`,
+    visible: true,
+    color: LAYER_COLORS[(id - 1) % LAYER_COLORS.length],
+    box,
+    position,
+    fillet: 0, // 0..1 of max possible radius
+    // Closed sketch paths per orthographic view, stored in box-relative
+    // planar coordinates: top => {x: relX, y: relZ}, front => {x: relX, y: relY},
+    // side => {x: relZ, y: relY}.
+    paths: { top: [], front: [], side: [] },
+    underlay: null, // { src, plane: 'xy'|'xz'|'yz', opacity, flipH, flipV }
+  };
+  state.layers.push(layer);
+  state.activeLayerId = id;
+  return layer;
+}
+
+export function getLayer(id) {
+  return state.layers.find((l) => l.id === id) ?? null;
+}
+
+export function activeLayer() {
+  return getLayer(state.activeLayerId);
+}
+
+export function deleteLayer(id) {
+  const i = state.layers.findIndex((l) => l.id === id);
+  if (i === -1) return;
+  state.layers.splice(i, 1);
+  if (state.activeLayerId === id) {
+    state.activeLayerId = state.layers.length ? state.layers[Math.max(0, i - 1)].id : null;
+  }
+}
+
+export function unitFactor() { return UNIT_FACTORS[state.units]; }
+
+// ---------------- undo / redo ----------------
+// Actions cover sketch path mutations (add / clear) per the drawing workflow.
+
+const undoStack = [];
+const redoStack = [];
+const MAX_UNDO = 100;
+
+export function pushAction(action) {
+  undoStack.push(action);
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  redoStack.length = 0;
+}
+
+export function addPaths(layer, view, paths) {
+  layer.paths[view].push(...paths);
+  pushAction({ type: 'addPaths', layerId: layer.id, view, count: paths.length });
+  touch(layer);
+}
+
+export function clearPaths(layer) {
+  const before = JSON.parse(JSON.stringify(layer.paths));
+  layer.paths = { top: [], front: [], side: [] };
+  pushAction({ type: 'setPaths', layerId: layer.id, before, after: JSON.parse(JSON.stringify(layer.paths)) });
+  touch(layer);
+}
+
+export function undo() {
+  const a = undoStack.pop();
+  if (!a) return;
+  const layer = getLayer(a.layerId);
+  if (!layer) return;
+  if (a.type === 'addPaths') {
+    a.removed = layer.paths[a.view].splice(layer.paths[a.view].length - a.count, a.count);
+  } else if (a.type === 'setPaths') {
+    layer.paths = JSON.parse(JSON.stringify(a.before));
+  }
+  redoStack.push(a);
+  touch(layer);
+}
+
+export function redo() {
+  const a = redoStack.pop();
+  if (!a) return;
+  const layer = getLayer(a.layerId);
+  if (!layer) return;
+  if (a.type === 'addPaths') {
+    layer.paths[a.view].push(...(a.removed ?? []));
+  } else if (a.type === 'setPaths') {
+    layer.paths = JSON.parse(JSON.stringify(a.after));
+  }
+  undoStack.push(a);
+  touch(layer);
+}
+
+// ---------------- serialization ----------------
+
+export function serialize({ includeUnderlays = true } = {}) {
+  return {
+    v: 1,
+    units: state.units,
+    activeLayerId: state.activeLayerId,
+    layers: state.layers.map((l) => ({
+      id: l.id,
+      name: l.name,
+      visible: l.visible,
+      color: l.color,
+      box: { ...l.box },
+      position: { ...l.position },
+      fillet: l.fillet,
+      paths: JSON.parse(JSON.stringify(l.paths)),
+      underlay: l.underlay && includeUnderlays ? { ...l.underlay } : null,
+    })),
+  };
+}
+
+export function deserialize(data) {
+  if (!data || data.v !== 1 || !Array.isArray(data.layers)) throw new Error('Unrecognized project file');
+  state.layers = data.layers.map((l) => ({
+    id: l.id,
+    name: l.name ?? `Layer ${l.id}`,
+    visible: l.visible !== false,
+    color: l.color ?? LAYER_COLORS[0],
+    box: { w: +l.box.w || 100, h: +l.box.h || 100, d: +l.box.d || 100 },
+    position: { x: +l.position.x || 0, y: +l.position.y || 0, z: +l.position.z || 0 },
+    fillet: +l.fillet || 0,
+    paths: l.paths ?? { top: [], front: [], side: [] },
+    underlay: l.underlay ?? null,
+  }));
+  state.units = data.units ?? 'mm';
+  state.activeLayerId = data.activeLayerId ?? (state.layers[0]?.id ?? null);
+  nextLayerId = Math.max(0, ...state.layers.map((l) => l.id)) + 1;
+  undoStack.length = 0;
+  redoStack.length = 0;
+  emit('change');
+  for (const l of state.layers) emit('mesh', l);
+}
+
+export function resetProject() {
+  state.layers = [];
+  state.activeLayerId = null;
+  nextLayerId = 1;
+  undoStack.length = 0;
+  redoStack.length = 0;
+  createLayer();
+  emit('change');
+  emit('mesh', activeLayer());
+}
