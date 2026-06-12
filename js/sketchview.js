@@ -4,11 +4,13 @@
 // Drawing happens here ONLY — the perspective view never receives sketches.
 
 import {
-  state, activeLayer, addPaths, touch, emit,
+  state, activeLayer, setViewPaths, touch, emit, on,
 } from './state.js';
 import {
   dist, simplifyDP, chaikinClosed, flattenBezierPath, pathArea, mirrorPathH,
 } from './geometry.js';
+import { getProjection } from './scene3d.js';
+import { showToast } from './toast.js';
 
 // Per-view axis mapping. h/v are the planar coordinates stored in paths.
 // vSign: +1 means screen-down increases v, -1 means screen-up increases v.
@@ -134,7 +136,8 @@ export class SketchView {
       }
       if (this.drawing) {
         // collect coalesced events for smooth stylus capture
-        const events = e.getCoalescedEvents?.() ?? [e];
+        let events = e.getCoalescedEvents?.() ?? [];
+        if (!events.length) events = [e];
         for (const ev of events) this.drawing.push(this.localPos(ev));
         this.draw();
         return;
@@ -246,6 +249,10 @@ export class SketchView {
   }
 
   // Convert world-planar path to box-relative coords, apply symmetry, commit.
+  // Design-director workflow: each view holds ONE profile (the silhouette
+  // from that direction) — a new sketch replaces the previous one, and
+  // Ctrl+Z restores it. The final form is always the intersection of the
+  // three silhouettes within the box.
   commitPath(layer, worldPath) {
     if (pathArea(worldPath) < 4) { this.draw(); return; }
     const bp = this.boxPlanar(layer);
@@ -253,9 +260,28 @@ export class SketchView {
       x: +(p.x - bp.ch).toFixed(3),
       y: +(p.y - bp.cv).toFixed(3),
     }));
+
+    // a sketch that never overlaps the box would clip the form to nothing
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of rel) {
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }
+    const overlaps = minX <= bp.hw && maxX >= -bp.hw && minY <= bp.hh && maxY >= -bp.hh;
+    if (!overlaps) {
+      showToast('Sketch is outside the layer’s box — draw over the box outline');
+      this.draw();
+      return;
+    }
+
     const paths = [rel];
     if (state.symmetry) paths.push(mirrorPathH(rel, 0)); // mirror across box vertical centerline
-    addPaths(layer, this.name, paths);
+    const replaced = layer.paths[this.name].length > 0;
+    setViewPaths(layer, this.name, paths);
+    if (replaced) {
+      const label = { top: 'Top', front: 'Front', side: 'Side' }[this.name];
+      showToast(`${label} profile updated (Ctrl+Z restores the previous one)`);
+    }
   }
 
   // ----- layer dragging (Select / Move tool, W) -----
@@ -354,6 +380,7 @@ export class SketchView {
     ctx.clearRect(0, 0, w, h);
 
     this.drawGrid(ctx, w, h);
+    this.drawProjection(ctx);
 
     for (const layer of state.layers) {
       if (!layer.visible) continue;
@@ -397,6 +424,20 @@ export class SketchView {
     ctx.moveTo(o.x, 0); ctx.lineTo(o.x, h);
     ctx.moveTo(0, o.y); ctx.lineTo(w, o.y);
     ctx.stroke();
+  }
+
+  // Translucent render of the actual 3D result from this view's direction —
+  // every model change is visible in every view.
+  drawProjection(ctx) {
+    const proj = getProjection(this.name);
+    if (!proj?.rect) return;
+    const a = this.w2s(proj.rect.hMin, proj.rect.vMin);
+    const b = this.w2s(proj.rect.hMax, proj.rect.vMax);
+    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.drawImage(proj.canvas, x, y, Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+    ctx.restore();
   }
 
   drawBox(ctx, layer) {
@@ -537,3 +578,7 @@ export function cancelAllSketches() {
   for (const v of Object.values(sketchViews)) any = v.cancelSketch() || any;
   return any;
 }
+
+// CSG rebuilds finish after the 'change' redraw — refresh the ghost
+// projections once the new mesh exists.
+on('projection', () => redrawAll());

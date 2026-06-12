@@ -18,7 +18,9 @@ Then open `http://localhost:8080`. (Three.js, three-bvh-csg, and Tailwind load f
 
 - Each **layer** is a 3D bounding box. New layers stack on top of the previous one and can be dragged/snapped against other boxes with the Select/Move tool.
 - Draw a **closed shape** in any orthographic view (Top, Front, Side). It is extruded through the box along that view's axis.
-- Draw in two or more views and the final mesh is the **boolean intersection** of those extrusions, clipped to the layer's bounding box (powered by [three-bvh-csg](https://github.com/gkjohnson/three-bvh-csg)).
+- Each view holds **one profile per layer** — the silhouette from that direction. Drawing again in the same view replaces the previous profile (`Ctrl+Z` restores it), so you can iterate on a silhouette as fast as you can sketch. Sketches that miss the box entirely are rejected with a warning instead of clipping the form to nothing.
+- Draw in two or more views and the final mesh is the **boolean intersection** of those silhouettes, clipped to the layer's bounding box (powered by [three-bvh-csg](https://github.com/gkjohnson/three-bvh-csg)).
+- Every ortho view shows a translucent **ghost projection of the actual 3D result**, so a change made in one view (or to dimensions/fillet) is immediately visible in all the others.
 - The **Perspective view never accepts drawing** — it is navigation-only (orbit/pan/zoom).
 
 ## Tools (bottom menu)
@@ -41,6 +43,8 @@ Then open `http://localhost:8080`. (Three.js, three-bvh-csg, and Tailwind load f
 **Other shortcuts** — `Ctrl+Z` / `Ctrl+Y` undo/redo sketches · `Esc` cancels the in-progress sketch, exits fullscreen, or deselects the tool · Double-click a viewport header to maximize it (menus auto-hide; `Esc` restores).
 
 ## Layer settings (side panel)
+
+The layer strip docks to the bottom-right corner by default, with the settings panel stacked directly above it. Both are draggable by their grip handles and dock to whichever screen corner you drop them near.
 
 Click a layer chip in the floating layer strip to open its panel:
 

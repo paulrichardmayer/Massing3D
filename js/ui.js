@@ -6,17 +6,13 @@ import {
   clearPaths, unitFactor,
 } from './state.js';
 import { redrawAll, getLastFocusedView } from './sketchview.js';
+import { makeDockable, layoutDocked } from './dock.js';
+import { showToast } from './toast.js';
+
+export { showToast };
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
-
-export function showToast(msg, ms = 2200) {
-  const t = $('#toast');
-  t.textContent = msg;
-  t.style.opacity = '1';
-  clearTimeout(t._timer);
-  t._timer = setTimeout(() => { t.style.opacity = '0'; }, ms);
-}
 
 // ---------------- adaptive viewport layout ----------------
 // Logical rows: [top, persp] / [front, side]. Visible members of a row share
@@ -115,10 +111,12 @@ export function openSidePanel() {
   if (!layer) return;
   $('#side-panel').classList.remove('hidden');
   syncSidePanel();
+  layoutDocked();
 }
 
 export function closeSidePanel() {
   $('#side-panel').classList.add('hidden');
+  layoutDocked();
 }
 
 function syncSidePanel() {
@@ -287,7 +285,14 @@ export function initUI() {
     renderLayerChips();
     syncSidePanel();
     redrawAll();
+    layoutDocked();
   });
+
+  // Layer strip docks bottom-right by default; the settings panel shares the
+  // corner and stacks directly above it. Both drag by their grips and dock
+  // to whichever corner they're dropped near.
+  makeDockable($('#menu-layers'), 'bottom-right', '.drag-grip');
+  makeDockable($('#side-panel'), 'bottom-right', '.drag-grip');
 
   setTool(state.tool);
   applyLayout();

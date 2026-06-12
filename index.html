@@ -78,8 +78,11 @@
       </button>
     </div>
 
-    <!-- ============ Center-Center floating layer strip ============ -->
-    <div id="menu-layers" class="floating-menu fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 flex items-center gap-1 px-2 py-1.5">
+    <!-- ============ Floating layer strip (draggable, docks to corners) ============ -->
+    <div id="menu-layers" class="floating-menu fixed z-40 flex items-center gap-1 px-2 py-1.5" style="right:12px;bottom:12px">
+      <span class="drag-grip" data-tip="Drag to move — release near a corner to dock">
+        <svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>
+      </span>
       <span class="text-[10px] uppercase tracking-wider text-zinc-500 px-1">Layers</span>
       <div id="layer-chips" class="flex items-center gap-1"></div>
       <button id="btn-add-layer" class="menu-btn !px-2" data-tip="Add a new 3D box layer (stacks on top)">
@@ -113,9 +116,14 @@
     </div>
 
     <!-- ============ Side contextual panel (active layer settings) ============ -->
-    <aside id="side-panel" class="fixed top-1/2 right-3 -translate-y-1/2 z-40 w-64 floating-menu !rounded-xl p-3 hidden flex-col gap-3">
+    <aside id="side-panel" class="fixed z-40 w-64 floating-menu !rounded-xl p-3 hidden flex-col gap-3" style="right:12px;bottom:64px">
       <div class="flex items-center justify-between">
-        <h3 id="panel-layer-name" class="text-sm font-semibold text-zinc-100">Layer</h3>
+        <div class="flex items-center gap-1.5">
+          <span class="drag-grip" data-tip="Drag to move — release near a corner to dock">
+            <svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>
+          </span>
+          <h3 id="panel-layer-name" class="text-sm font-semibold text-zinc-100">Layer</h3>
+        </div>
         <button id="panel-close" class="menu-btn !px-1.5 !py-1" data-tip="Close panel">
           <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>

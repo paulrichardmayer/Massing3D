@@ -188,6 +188,28 @@ input[type="range"] {
   opacity: 0.45;
 }
 
+/* ---- drag grips for dockable panels ---- */
+.drag-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.4rem;
+  border-radius: 0.3rem;
+  color: #52525b;
+  touch-action: none;
+}
+.drag-grip:hover {
+  color: #a1a1aa;
+  background: rgba(63, 63, 70, 0.5);
+}
+.drag-grip svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  fill: currentColor;
+  stroke: none;
+}
+
 /* fullscreen mode: hide menus */
 #app.maximized #menu-top,
 #app.maximized #menu-layers {

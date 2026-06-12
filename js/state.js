@@ -16,7 +16,7 @@ export const state = {
   maximized: null, // view name or null
 };
 
-const listeners = { change: [], layers: [], mesh: [] };
+const listeners = { change: [], layers: [], mesh: [], projection: [] };
 
 export function on(event, fn) { listeners[event].push(fn); }
 
@@ -30,7 +30,7 @@ export function touch(layer) { emit('change'); if (layer) emit('mesh', layer); }
 export function createLayer() {
   const id = nextLayerId++;
   const prev = state.layers[state.layers.length - 1];
-  const box = { w: 160, h: 80, d: 240 };
+  const box = { w: 160, h: 160, d: 240 };
   // New boxes stack on top of the previous one by default.
   const position = prev
     ? { x: prev.position.x, y: prev.position.y + prev.box.h / 2 + box.h / 2, z: prev.position.z }
@@ -86,9 +86,17 @@ export function pushAction(action) {
   redoStack.length = 0;
 }
 
-export function addPaths(layer, view, paths) {
-  layer.paths[view].push(...paths);
-  pushAction({ type: 'addPaths', layerId: layer.id, view, count: paths.length });
+// Design-director drawing logic: a new closed sketch in a view REPLACES that
+// view's profile for the layer. Designers iterate on silhouettes — the last
+// stroke is the current intent; Ctrl+Z brings the previous profile back.
+// (With symmetry on, the profile is the mirrored pair.)
+export function setViewPaths(layer, view, paths) {
+  const before = JSON.parse(JSON.stringify(layer.paths[view]));
+  layer.paths[view] = paths;
+  pushAction({
+    type: 'setViewPaths', layerId: layer.id, view,
+    before, after: JSON.parse(JSON.stringify(paths)),
+  });
   touch(layer);
 }
 
@@ -104,8 +112,8 @@ export function undo() {
   if (!a) return;
   const layer = getLayer(a.layerId);
   if (!layer) return;
-  if (a.type === 'addPaths') {
-    a.removed = layer.paths[a.view].splice(layer.paths[a.view].length - a.count, a.count);
+  if (a.type === 'setViewPaths') {
+    layer.paths[a.view] = JSON.parse(JSON.stringify(a.before));
   } else if (a.type === 'setPaths') {
     layer.paths = JSON.parse(JSON.stringify(a.before));
   }
@@ -118,8 +126,8 @@ export function redo() {
   if (!a) return;
   const layer = getLayer(a.layerId);
   if (!layer) return;
-  if (a.type === 'addPaths') {
-    layer.paths[a.view].push(...(a.removed ?? []));
+  if (a.type === 'setViewPaths') {
+    layer.paths[a.view] = JSON.parse(JSON.stringify(a.after));
   } else if (a.type === 'setPaths') {
     layer.paths = JSON.parse(JSON.stringify(a.after));
   }

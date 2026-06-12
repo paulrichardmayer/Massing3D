@@ -5,13 +5,13 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { Brush, Evaluator, INTERSECTION } from 'three-bvh-csg';
-import { state, on } from './state.js';
+import { state, on, emit } from './state.js';
 import { roundCorners } from './geometry.js';
 
 const evaluator = new Evaluator();
 evaluator.attributes = ['position', 'normal'];
 
-let renderer, scene, camera, container;
+let renderer, scene, camera, container, gridHelper;
 const layerGroups = new Map(); // layerId -> { mesh, outline, underlayMesh, group }
 const textureLoader = new THREE.TextureLoader();
 
@@ -38,9 +38,9 @@ export function initScene(containerEl) {
   fill.position.set(-400, 200, -300);
   scene.add(fill);
 
-  const grid = new THREE.GridHelper(2000, 40, 0x3f3f46, 0x27272a);
-  grid.position.y = 0;
-  scene.add(grid);
+  gridHelper = new THREE.GridHelper(2000, 40, 0x3f3f46, 0x27272a);
+  gridHelper.position.y = 0;
+  scene.add(gridHelper);
 
   setupNavigation();
 
@@ -239,6 +239,9 @@ export function rebuildLayer(layer) {
   rebuildOutline(layer, entry);
   rebuildUnderlay(layer, entry);
   syncLayerVisibility(layer, entry);
+
+  projDirty = true;
+  emit('projection');
 }
 
 function rebuildOutline(layer, entry) {
@@ -316,6 +319,100 @@ function syncAllLayers() {
     if (entry.mesh) entry.mesh.position.set(layer.position.x, layer.position.y, layer.position.z);
     if (entry.underlayMesh) rebuildUnderlay(layer, entry);
   }
+  projDirty = true;
+}
+
+// ---------------- ortho ghost projections ----------------
+// Offscreen orthographic renders of the layer meshes from each sketch
+// direction, drawn as a translucent underlay in the 2D views — so any change
+// to the model (sketch, dimensions, fillet, layer move) is immediately
+// visible in every view.
+
+let projRenderer = null;
+let projDirty = true;
+const projCache = {}; // view -> { canvas, rect: {hMin,hMax,vMin,vMax} }
+const PROJ_SIZE = 512;
+const PROJ_AXES = {
+  top:   { h: 'x', v: 'z' },
+  front: { h: 'x', v: 'y' },
+  side:  { h: 'z', v: 'y' },
+};
+
+export function getProjection(view) {
+  if (!renderer) return null;
+  if (projDirty) renderProjections();
+  return projCache[view] ?? null;
+}
+
+function renderProjections() {
+  projDirty = false;
+  const visibleLayers = state.layers.filter((l) => l.visible);
+  if (!visibleLayers.length) {
+    projCache.top = projCache.front = projCache.side = null;
+    return;
+  }
+  if (!projRenderer) {
+    projRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    projRenderer.setSize(PROJ_SIZE, PROJ_SIZE);
+  }
+
+  // world bounds of all visible layer boxes
+  const min = { x: Infinity, y: Infinity, z: Infinity };
+  const max = { x: -Infinity, y: -Infinity, z: -Infinity };
+  for (const l of visibleLayers) {
+    const half = { x: l.box.w / 2, y: l.box.h / 2, z: l.box.d / 2 };
+    for (const ax of ['x', 'y', 'z']) {
+      min[ax] = Math.min(min[ax], l.position[ax] - half[ax]);
+      max[ax] = Math.max(max[ax], l.position[ax] + half[ax]);
+    }
+  }
+  const center = new THREE.Vector3(
+    (min.x + max.x) / 2, (min.y + max.y) / 2, (min.z + max.z) / 2,
+  );
+
+  // render only the result meshes: hide chrome
+  const restore = [];
+  const hide = (obj) => { if (obj && obj.visible) { restore.push(obj); obj.visible = false; } };
+  hide(gridHelper);
+  for (const entry of layerGroups.values()) {
+    hide(entry.outline);
+    hide(entry.underlayMesh);
+  }
+  const prevBg = scene.background;
+  scene.background = null;
+
+  const D = 50000;
+  for (const view of ['top', 'front', 'side']) {
+    const ax = PROJ_AXES[view];
+    const hw = Math.max(1, (max[ax.h] - min[ax.h]) / 2) * 1.03;
+    const hh = Math.max(1, (max[ax.v] - min[ax.v]) / 2) * 1.03;
+    const cam = new THREE.OrthographicCamera(-hw, hw, hh, -hh, 1, D * 2);
+    if (view === 'top') {
+      cam.position.set(center.x, center.y + D, center.z);
+      cam.up.set(0, 0, -1);
+    } else if (view === 'front') {
+      cam.position.set(center.x, center.y, center.z + D);
+      cam.up.set(0, 1, 0);
+    } else {
+      cam.position.set(center.x - D, center.y, center.z);
+      cam.up.set(0, 1, 0);
+    }
+    cam.lookAt(center);
+    cam.updateProjectionMatrix();
+    projRenderer.render(scene, cam);
+
+    let entry = projCache[view];
+    if (!entry) entry = projCache[view] = { canvas: document.createElement('canvas'), rect: null };
+    entry.canvas.width = entry.canvas.height = PROJ_SIZE;
+    const ctx = entry.canvas.getContext('2d');
+    ctx.clearRect(0, 0, PROJ_SIZE, PROJ_SIZE);
+    ctx.drawImage(projRenderer.domElement, 0, 0);
+    const ch = (min[ax.h] + max[ax.h]) / 2, cv = (min[ax.v] + max[ax.v]) / 2;
+    entry.rect = { hMin: ch - hw, hMax: ch + hw, vMin: cv - hh, vMax: cv + hh };
+  }
+
+  scene.background = prevBg;
+  for (const obj of restore) obj.visible = true;
 }
 
 // Export-ready meshes (world transforms baked).
