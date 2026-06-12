@@ -9,7 +9,7 @@ let nextLayerId = 1;
 export const state = {
   layers: [],
   activeLayerId: null,
-  tool: 'freehand', // nav | select | bezier | freehand
+  tool: 'freehand', // nav | select | bezier | freehand | rect | ellipse
   symmetry: false,
   units: 'mm',
   visibleViews: { top: true, front: true, side: true, persp: true },

@@ -5,7 +5,7 @@ import {
   state, on, emit, touch, createLayer, deleteLayer, getLayer, activeLayer,
   clearPaths, unitFactor,
 } from './state.js';
-import { redrawAll, getLastFocusedView } from './sketchview.js';
+import { redrawAll, getLastFocusedView, commitAllPendingShapes } from './sketchview.js';
 import { makeDockable, layoutDocked } from './dock.js';
 import { showToast } from './toast.js';
 
@@ -49,6 +49,7 @@ export function setMaximized(view) {
 // ---------------- tools ----------------
 
 export function setTool(tool) {
+  commitAllPendingShapes(); // don't drop a rect mid-radius-tweak
   state.tool = tool;
   $$('.tool-btn').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
   $$('canvas.sketch-canvas').forEach((c) => {

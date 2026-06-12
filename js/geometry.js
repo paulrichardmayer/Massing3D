@@ -148,6 +148,44 @@ function norm(v) {
   return { x: v.x / len, y: v.y / len };
 }
 
+// Axis-aligned rectangle with circular rounded corners, sampled as a closed
+// polygon. cx/cy center, hw/hh half-extents, r corner radius (clamped so
+// opposite arcs never overlap). r = 0 yields the sharp 4-corner rect.
+export function roundedRectPath(cx, cy, hw, hh, r = 0, arcSamples = 8) {
+  r = Math.max(0, Math.min(r, hw, hh));
+  if (r < 1e-6) {
+    return [
+      { x: cx - hw, y: cy - hh }, { x: cx + hw, y: cy - hh },
+      { x: cx + hw, y: cy + hh }, { x: cx - hw, y: cy + hh },
+    ];
+  }
+  // arc centers, walked CCW starting from the +x/+y corner
+  const corners = [
+    { x: cx + hw - r, y: cy + hh - r, a0: 0 },
+    { x: cx - hw + r, y: cy + hh - r, a0: Math.PI / 2 },
+    { x: cx - hw + r, y: cy - hh + r, a0: Math.PI },
+    { x: cx + hw - r, y: cy - hh + r, a0: Math.PI * 1.5 },
+  ];
+  const out = [];
+  for (const c of corners) {
+    for (let s = 0; s <= arcSamples; s++) {
+      const a = c.a0 + (s / arcSamples) * (Math.PI / 2);
+      out.push({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r });
+    }
+  }
+  return out;
+}
+
+// Axis-aligned ellipse sampled as a closed polygon.
+export function ellipsePath(cx, cy, rx, ry, samples = 64) {
+  const out = [];
+  for (let i = 0; i < samples; i++) {
+    const a = (i / samples) * Math.PI * 2;
+    out.push({ x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry });
+  }
+  return out;
+}
+
 export function pathArea(points) {
   let area = 0;
   const n = points.length;

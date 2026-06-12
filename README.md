@@ -6,6 +6,7 @@ A web-based 3D ideation tool for industrial designers. Draw 2D orthographic sket
 
 - Each **layer** is a 3D bounding box. New layers stack on top of the previous one and can be dragged/snapped against other boxes with the Select/Move tool.
 - Draw a **closed shape** in any orthographic view (Top, Front, Side). It is extruded through the box along that view's axis.
+- With a shape tool (Rectangle/Ellipse) active, **double-click inside a layer's box** to fill that box face with the shape instantly — ellipse-fill gives you cylinders/capsules for free.
 - Each view holds **one profile per layer** — the silhouette from that direction. Drawing again in the same view replaces the previous profile (`Ctrl+Z` restores it), so you can iterate on a silhouette as fast as you can sketch. Sketches that miss the box entirely are rejected with a warning instead of clipping the form to nothing.
 - Draw in two or more views and the final mesh is the **boolean intersection** of those silhouettes, clipped to the layer's bounding box (powered by [three-bvh-csg](https://github.com/gkjohnson/three-bvh-csg)).
 - Every ortho view shows a translucent **ghost projection of the actual 3D result**, so a change made in one view (or to dimensions/fillet) is immediately visible in all the others.
@@ -17,6 +18,8 @@ A web-based 3D ideation tool for industrial designers. Draw 2D orthographic sket
 |---|---|---|
 | Navigate | — | Pan/zoom the view |
 | Select / Move | `W` | Drag box layers in ortho views, snaps to other boxes' faces |
+| Rectangle | `R` | Drag corner-to-corner · `Shift` = square · after release, scroll or `[` `]` round the corners live, next click commits |
+| Ellipse | `E` | Drag the bounding box · `Shift` = circle |
 | Bezier Line | `L` | Tap to place anchors, drag for handles, click the first anchor to close |
 | Freehand Sketch | `F` | Stylus-friendly (pointer events + coalescing), Douglas-Peucker smoothed |
 | Symmetry | `S` | Mirrors new sketches across the box's vertical centerline |

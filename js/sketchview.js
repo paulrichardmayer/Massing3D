@@ -8,7 +8,7 @@ import {
 } from './state.js';
 import {
   dist, simplifyDP, chaikinClosed, flattenBezierPath, pathArea, mirrorPathH,
-  smoothClosure,
+  smoothClosure, roundedRectPath, ellipsePath,
 } from './geometry.js';
 import PolyBool from './vendor/polybool.js';
 import { getProjection } from './scene3d.js';
@@ -58,6 +58,9 @@ export class SketchView {
     this.cam = { h: 0, v: 0, scale: 1.6 }; // world center + px per mm
     this.drawing = null;        // freehand in progress: [{x,y} screen]
     this.bezier = null;         // bezier in progress: { anchors: [...], pending }
+    this.shapeDrag = null;      // rect/ellipse drag: { tool, start, curr (world h/v), shift }
+    this.pendingRect = null;    // released rect awaiting radius tweak: { layer, ch, cv, hw, hh, r }
+    this.lastPendingCommit = 0; // timestamp guard so the committing click's dblclick doesn't fill-box
     this.hoverPos = null;
     this.dragLayer = null;      // { layer, startH, startV, origPos }
     this.panState = null;
@@ -130,8 +133,22 @@ export class SketchView {
       }
       if (e.button !== 0) return;
 
+      // a click anywhere commits the rect awaiting corner-radius tweaks
+      for (const v of Object.values(sketchViews)) {
+        if (v !== this && v.pendingRect) v.commitPendingRect();
+      }
+      if (this.pendingRect) {
+        this.commitPendingRect();
+        return;
+      }
+
       const tool = state.tool;
-      if (tool === 'nav') {
+      if (tool === 'rect' || tool === 'ellipse') {
+        if (!activeLayer()) return;
+        const w = this.s2w(p.x, p.y);
+        this.shapeDrag = { tool, start: { h: w.h, v: w.v }, curr: { h: w.h, v: w.v }, shift: e.shiftKey };
+        c.setPointerCapture(e.pointerId);
+      } else if (tool === 'nav') {
         this.panState = { x: p.x, y: p.y };
         c.setPointerCapture(e.pointerId);
       } else if (tool === 'select') {
@@ -153,6 +170,13 @@ export class SketchView {
         this.cam.h -= (p.x - this.panState.x) / this.cam.scale;
         this.cam.v -= ((p.y - this.panState.y) / this.cam.scale) * this.cfg.vSign;
         this.panState = { x: p.x, y: p.y };
+        this.draw();
+        return;
+      }
+      if (this.shapeDrag) {
+        const w = this.s2w(p.x, p.y);
+        this.shapeDrag.curr = { h: w.h, v: w.v };
+        this.shapeDrag.shift = e.shiftKey;
         this.draw();
         return;
       }
@@ -189,6 +213,10 @@ export class SketchView {
         this.finishFreehand();
         try { c.releasePointerCapture(e.pointerId); } catch { /* ok */ }
       }
+      if (this.shapeDrag) {
+        this.finishShapeDrag();
+        try { c.releasePointerCapture(e.pointerId); } catch { /* ok */ }
+      }
       if (this.bezier?.pending) this.bezier.pending = false;
       if (this.dragLayer) {
         this.dragLayer = null;
@@ -200,9 +228,27 @@ export class SketchView {
 
     c.addEventListener('pointerleave', () => { this.hoverPos = null; this.draw(); });
 
-    // Scroll wheel zoom centered on cursor.
+    // Double-click inside a layer's box with a shape tool active fills the
+    // box face with that shape (rect = the face itself, ellipse = inscribed).
+    c.addEventListener('dblclick', (e) => {
+      const tool = state.tool;
+      if (tool !== 'rect' && tool !== 'ellipse') return;
+      // the first click of this dblclick just committed a pending rect —
+      // don't immediately replace it with a fill-box shape
+      if (performance.now() - this.lastPendingCommit < 500) return;
+      this.fillBox(this.localPos(e), tool);
+    });
+
+    // Scroll wheel: corner-radius tweak while a rect is pending, else zoom.
     c.addEventListener('wheel', (e) => {
       e.preventDefault();
+      if (this.pendingRect) {
+        const pr = this.pendingRect;
+        const step = Math.min(pr.hw, pr.hh) * 0.0012 * -e.deltaY;
+        pr.r = Math.max(0, Math.min(pr.r + step, Math.min(pr.hw, pr.hh)));
+        this.draw();
+        return;
+      }
       const p = this.localPos(e);
       const before = this.s2w(p.x, p.y);
       const factor = Math.exp(-e.deltaY * 0.0012);
@@ -254,6 +300,80 @@ export class SketchView {
     requestAnimationFrame(tick);
   }
 
+  // ----- shape tools (rect / ellipse) -----
+  // Resolve a shape drag to center + half-extents in world planar coords.
+  // Shift constrains to a square/circle sized by the larger drag dimension.
+  shapeDragBounds(drag = this.shapeDrag) {
+    const { start, curr, shift } = drag;
+    let dh = curr.h - start.h, dv = curr.v - start.v;
+    if (shift) {
+      const side = Math.max(Math.abs(dh), Math.abs(dv));
+      dh = Math.sign(dh || 1) * side;
+      dv = Math.sign(dv || 1) * side;
+    }
+    return {
+      ch: start.h + dh / 2, cv: start.v + dv / 2,
+      hw: Math.abs(dh) / 2, hh: Math.abs(dv) / 2,
+    };
+  }
+
+  finishShapeDrag() {
+    const drag = this.shapeDrag;
+    this.shapeDrag = null;
+    const layer = activeLayer();
+    if (!layer) { this.draw(); return; }
+    const b = this.shapeDragBounds(drag);
+    // discard accidental clicks / sub-pixel drags
+    if (Math.min(b.hw, b.hh) * 2 * this.cam.scale < 4) { this.draw(); return; }
+
+    if (drag.tool === 'ellipse') {
+      this.commitPath(layer, ellipsePath(b.ch, b.cv, b.hw, b.hh, 64));
+      return;
+    }
+    // rect stays pending so the corner radius can be tuned live;
+    // the next click (or Enter / tool change) commits it
+    this.pendingRect = { layer, ...b, r: 0 };
+    showToast('Scroll or [ ] to round corners — click to commit');
+    this.draw();
+  }
+
+  commitPendingRect() {
+    const pr = this.pendingRect;
+    this.pendingRect = null;
+    if (!pr) return;
+    this.lastPendingCommit = performance.now();
+    this.commitPath(pr.layer, roundedRectPath(pr.ch, pr.cv, pr.hw, pr.hh, pr.r));
+  }
+
+  // [ / ] keys nudge the pending rect's corner radius.
+  adjustPendingRadius(dir) {
+    const pr = this.pendingRect;
+    if (!pr) return false;
+    const max = Math.min(pr.hw, pr.hh);
+    pr.r = Math.max(0, Math.min(pr.r + dir * max * 0.1, max));
+    this.draw();
+    return true;
+  }
+
+  // Double-click fill: fit the shape to the box face of the layer under p.
+  fillBox(p, tool) {
+    const w = this.s2w(p.x, p.y);
+    const candidates = [...state.layers].reverse();
+    const act = activeLayer();
+    if (act) candidates.unshift(act);
+    for (const layer of candidates) {
+      if (!layer.visible) continue;
+      const bp = this.boxPlanar(layer);
+      if (Math.abs(w.h - bp.ch) > bp.hw || Math.abs(w.v - bp.cv) > bp.hh) continue;
+      state.activeLayerId = layer.id;
+      const path = tool === 'ellipse'
+        ? ellipsePath(bp.ch, bp.cv, bp.hw, bp.hh, 64)
+        : roundedRectPath(bp.ch, bp.cv, bp.hw, bp.hh, 0);
+      this.commitPath(layer, path);
+      return;
+    }
+  }
+
   // ----- bezier -----
   bezierDown(p, e) {
     const layer = activeLayer();
@@ -287,9 +407,11 @@ export class SketchView {
   }
 
   cancelSketch() {
-    const had = this.drawing || this.bezier;
+    const had = this.drawing || this.bezier || this.shapeDrag || this.pendingRect;
     this.drawing = null;
     this.bezier = null;
+    this.shapeDrag = null;
+    this.pendingRect = null;
     if (had) this.draw();
     return !!had;
   }
@@ -560,6 +682,23 @@ export class SketchView {
     ctx.setLineDash([]);
   }
 
+  // Stroke a rect/ellipse outline given world planar center + half-extents.
+  strokeShape(ctx, tool, ch, cv, hw, hh, r, fill) {
+    const pts = tool === 'ellipse'
+      ? ellipsePath(ch, cv, hw, hh, 64)
+      : roundedRectPath(ch, cv, hw, hh, r);
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const s = this.w2s(p.x, p.y);
+      i === 0 ? ctx.moveTo(s.x, s.y) : ctx.lineTo(s.x, s.y);
+    });
+    ctx.closePath();
+    if (fill) { ctx.fillStyle = 'rgba(56,189,248,0.12)'; ctx.fill(); }
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+  }
+
   drawInProgress(ctx) {
     // closure animation: draw-on the smooth bridge, then fade it out
     if (this.closureAnim) {
@@ -579,6 +718,22 @@ export class SketchView {
       }
       ctx.stroke();
       ctx.restore();
+    }
+    // shape drag preview (rect / ellipse)
+    if (this.shapeDrag) {
+      const b = this.shapeDragBounds();
+      this.strokeShape(ctx, this.shapeDrag.tool, b.ch, b.cv, b.hw, b.hh, 0, false);
+    }
+    // pending rect with live corner radius
+    if (this.pendingRect) {
+      const pr = this.pendingRect;
+      this.strokeShape(ctx, 'rect', pr.ch, pr.cv, pr.hw, pr.hh, pr.r, true);
+      const s = this.w2s(pr.ch, pr.cv - this.cfg.vSign * pr.hh);
+      ctx.fillStyle = 'rgba(228,228,231,0.75)';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('scroll / [ ] — corner radius · click to commit', s.x, s.y - 10);
+      ctx.textAlign = 'left';
     }
     // freehand stroke
     if (this.drawing && this.drawing.length > 1) {
@@ -640,6 +795,22 @@ export class SketchView {
 
 export function redrawAll() {
   for (const v of Object.values(sketchViews)) v.draw();
+}
+
+// Commit any rect still pending a corner-radius tweak (e.g. on tool change),
+// so switching tools never silently drops a drawn shape.
+export function commitAllPendingShapes() {
+  for (const v of Object.values(sketchViews)) {
+    if (v.pendingRect) v.commitPendingRect();
+  }
+}
+
+// Route [ / ] corner-radius hotkeys to whichever view holds the pending rect.
+export function adjustPendingCornerRadius(dir) {
+  for (const v of Object.values(sketchViews)) {
+    if (v.adjustPendingRadius(dir)) return true;
+  }
+  return false;
 }
 
 export function cancelAllSketches() {
