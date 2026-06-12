@@ -43,9 +43,11 @@ export function createLayer() {
     box,
     position,
     fillet: 0, // 0..1 of max possible radius
-    // Closed sketch paths per orthographic view, stored in box-relative
-    // planar coordinates: top => {x: relX, y: relZ}, front => {x: relX, y: relY},
-    // side => {x: relZ, y: relY}.
+    // Closed sketch paths per orthographic view, stored NORMALIZED to the
+    // box: each coordinate is in [-1, 1] relative to the box half-extents
+    // for that view's plane (top => {x: x/(w/2), y: z/(d/2)}, front =>
+    // {x: x/(w/2), y: y/(h/2)}, side => {x: z/(d/2), y: y/(h/2)}).
+    // Resizing the box therefore stretches the silhouettes with it.
     paths: { top: [], front: [], side: [] },
     underlay: null, // { src, plane: 'xy'|'xz'|'yz', opacity, flipH, flipV }
   };
@@ -139,7 +141,7 @@ export function redo() {
 
 export function serialize({ includeUnderlays = true } = {}) {
   return {
-    v: 1,
+    v: 2,
     units: state.units,
     activeLayerId: state.activeLayerId,
     layers: state.layers.map((l) => ({
@@ -156,8 +158,27 @@ export function serialize({ includeUnderlays = true } = {}) {
   };
 }
 
+// v1 -> v2: paths moved from absolute mm (box-relative) to coordinates
+// normalized by the box half-extents for each view's plane.
+const VIEW_HALF_DIMS = { top: ['w', 'd'], front: ['w', 'h'], side: ['d', 'h'] };
+
+function migratePathsV1(layer) {
+  const box = layer.box ?? {};
+  const paths = layer.paths ?? { top: [], front: [], side: [] };
+  const out = { top: [], front: [], side: [] };
+  for (const view of ['top', 'front', 'side']) {
+    const [hDim, vDim] = VIEW_HALF_DIMS[view];
+    const hw = (+box[hDim] || 100) / 2;
+    const hh = (+box[vDim] || 100) / 2;
+    out[view] = (paths[view] ?? []).map((path) =>
+      path.map((p) => ({ x: +(p.x / hw).toFixed(5), y: +(p.y / hh).toFixed(5) }))
+    );
+  }
+  return out;
+}
+
 export function deserialize(data) {
-  if (!data || data.v !== 1 || !Array.isArray(data.layers)) throw new Error('Unrecognized project file');
+  if (!data || ![1, 2].includes(data.v) || !Array.isArray(data.layers)) throw new Error('Unrecognized project file');
   state.layers = data.layers.map((l) => ({
     id: l.id,
     name: l.name ?? `Layer ${l.id}`,
@@ -166,7 +187,7 @@ export function deserialize(data) {
     box: { w: +l.box.w || 100, h: +l.box.h || 100, d: +l.box.d || 100 },
     position: { x: +l.position.x || 0, y: +l.position.y || 0, z: +l.position.z || 0 },
     fillet: +l.fillet || 0,
-    paths: l.paths ?? { top: [], front: [], side: [] },
+    paths: data.v === 1 ? migratePathsV1(l) : (l.paths ?? { top: [], front: [], side: [] }),
     underlay: l.underlay ?? null,
   }));
   state.units = data.units ?? 'mm';

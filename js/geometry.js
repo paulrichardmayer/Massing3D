@@ -111,6 +111,43 @@ export function flattenBezierPath(anchors, samplesPerSeg = 16) {
   return pts;
 }
 
+// Smooth closure for freehand strokes. Closing last->first with a straight
+// chord slices the profile when the endpoints are far apart; instead, when the
+// gap exceeds `gapRatio` of the stroke's bounding-box diagonal, bridge it with
+// a cubic blend that continues the end tangent and arrives along the start
+// tangent. Returns the bridge points (excluding both endpoints), or null when
+// a plain implicit closure is fine.
+export function smoothClosure(path, gapRatio = 0.1, samples = 14) {
+  const n = path.length;
+  if (n < 4) return null;
+  const first = path[0], last = path[n - 1];
+  const gap = dist(first, last);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of path) {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  const diag = Math.hypot(maxX - minX, maxY - minY);
+  if (diag < 1e-6 || gap <= diag * gapRatio) return null;
+
+  // tangents averaged over a few points for stability against stroke jitter
+  const back = path[Math.max(0, n - 4)];
+  const ahead = path[Math.min(n - 1, 3)];
+  const tEnd = norm({ x: last.x - back.x, y: last.y - back.y });
+  const tStart = norm({ x: ahead.x - first.x, y: ahead.y - first.y });
+  const k = gap / 3;
+  const c0 = { x: last.x + tEnd.x * k, y: last.y + tEnd.y * k };
+  const c1 = { x: first.x - tStart.x * k, y: first.y - tStart.y * k };
+  const pts = sampleCubic(last, c0, c1, first, samples);
+  pts.pop(); // drop the endpoint — `first` already starts the path
+  return pts;
+}
+
+function norm(v) {
+  const len = Math.hypot(v.x, v.y) || 1;
+  return { x: v.x / len, y: v.y / len };
+}
+
 export function pathArea(points) {
   let area = 0;
   const n = points.length;

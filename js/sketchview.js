@@ -8,7 +8,9 @@ import {
 } from './state.js';
 import {
   dist, simplifyDP, chaikinClosed, flattenBezierPath, pathArea, mirrorPathH,
+  smoothClosure,
 } from './geometry.js';
+import PolyBool from './vendor/polybool.js';
 import { getProjection } from './scene3d.js';
 import { showToast } from './toast.js';
 
@@ -21,10 +23,30 @@ const VIEW_CONFIGS = {
 };
 
 const CLOSE_THRESHOLD_PX = 12;
+const CLOSURE_ANIM_MS = 650;
 
 export const sketchViews = {};
 let lastFocusedView = 'front';
 export function getLastFocusedView() { return lastFocusedView; }
+
+// Union `path` with itself (resolving self-intersections) and, when given,
+// with `mirrored`. Operates in normalized box space. Falls back to the raw
+// inputs if the boolean op fails so a sketch is never silently dropped.
+function cleanPaths(path, mirrored) {
+  const toRegion = (pts) => pts.map((p) => [p.x, p.y]);
+  try {
+    const result = PolyBool.union(
+      { regions: [toRegion(path)], inverted: false },
+      { regions: mirrored ? [toRegion(mirrored)] : [], inverted: false },
+    );
+    return result.regions
+      .map((r) => r.map(([x, y]) => ({ x: +x.toFixed(5), y: +y.toFixed(5) })))
+      .filter((r) => r.length >= 3 && pathArea(r) > 1e-4); // drop slivers
+  } catch (err) {
+    console.warn('2D union failed, storing raw path(s)', err);
+    return mirrored ? [path, mirrored] : [path];
+  }
+}
 
 export class SketchView {
   constructor(viewportEl, name) {
@@ -204,8 +226,32 @@ export class SketchView {
     let pts = simplifyDP(raw, 2.2);
     let world = pts.map((p) => this.s2w(p.x, p.y));
     let path = world.map((w) => ({ x: w.h, y: w.v }));
+
+    // If the endpoints are far apart, bridge the gap with a smooth tangent
+    // blend instead of letting the implicit chord slice across the profile —
+    // and animate the bridge so the user sees what closed the shape.
+    const bridge = smoothClosure(path);
+    if (bridge) {
+      this.startClosureAnim([path[path.length - 1], ...bridge, path[0]]);
+      path = path.concat(bridge);
+    }
     path = chaikinClosed(path, 1);
     this.commitPath(layer, path);
+  }
+
+  startClosureAnim(worldPts) {
+    this.closureAnim = { pts: worldPts, start: performance.now() };
+    const tick = () => {
+      if (!this.closureAnim) return;
+      this.draw();
+      if (performance.now() - this.closureAnim.start > CLOSURE_ANIM_MS) {
+        this.closureAnim = null;
+        this.draw();
+      } else {
+        requestAnimationFrame(tick);
+      }
+    };
+    requestAnimationFrame(tick);
   }
 
   // ----- bezier -----
@@ -248,17 +294,17 @@ export class SketchView {
     return !!had;
   }
 
-  // Convert world-planar path to box-relative coords, apply symmetry, commit.
-  // Design-director workflow: each view holds ONE profile (the silhouette
-  // from that direction) — a new sketch replaces the previous one, and
-  // Ctrl+Z restores it. The final form is always the intersection of the
-  // three silhouettes within the box.
+  // Convert world-planar path to box-normalized coords ([-1,1] per axis),
+  // apply symmetry, commit. Design-director workflow: each view holds ONE
+  // profile (the silhouette from that direction) — a new sketch replaces the
+  // previous one, and Ctrl+Z restores it. The final form is always the
+  // intersection of the three silhouettes within the box.
   commitPath(layer, worldPath) {
     if (pathArea(worldPath) < 4) { this.draw(); return; }
     const bp = this.boxPlanar(layer);
     const rel = worldPath.map((p) => ({
-      x: +(p.x - bp.ch).toFixed(3),
-      y: +(p.y - bp.cv).toFixed(3),
+      x: +((p.x - bp.ch) / bp.hw).toFixed(5),
+      y: +((p.y - bp.cv) / bp.hh).toFixed(5),
     }));
 
     // a sketch that never overlaps the box would clip the form to nothing
@@ -267,15 +313,19 @@ export class SketchView {
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
       minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
     }
-    const overlaps = minX <= bp.hw && maxX >= -bp.hw && minY <= bp.hh && maxY >= -bp.hh;
+    const overlaps = minX <= 1 && maxX >= -1 && minY <= 1 && maxY >= -1;
     if (!overlaps) {
       showToast('Sketch is outside the layer’s box — draw over the box outline');
       this.draw();
       return;
     }
 
-    const paths = [rel];
-    if (state.symmetry) paths.push(mirrorPathH(rel, 0)); // mirror across box vertical centerline
+    // Boolean cleanup: repair self-intersecting strokes, and with symmetry on
+    // union the stroke with its mirror so a stroke crossing the centerline
+    // yields one clean outline instead of two overlapping shapes (which would
+    // self-intersect the extrusion brush and break CSG).
+    const paths = cleanPaths(rel, state.symmetry ? mirrorPathH(rel, 0) : null);
+    if (!paths.length) { this.draw(); return; }
     const replaced = layer.paths[this.name].length > 0;
     setViewPaths(layer, this.name, paths);
     if (replaced) {
@@ -459,7 +509,7 @@ export class SketchView {
     for (const path of layer.paths[this.name]) {
       ctx.beginPath();
       path.forEach((p, i) => {
-        const s = this.w2s(bp.ch + p.x, bp.cv + p.y);
+        const s = this.w2s(bp.ch + p.x * bp.hw, bp.cv + p.y * bp.hh);
         i === 0 ? ctx.moveTo(s.x, s.y) : ctx.lineTo(s.x, s.y);
       });
       ctx.closePath();
@@ -511,6 +561,25 @@ export class SketchView {
   }
 
   drawInProgress(ctx) {
+    // closure animation: draw-on the smooth bridge, then fade it out
+    if (this.closureAnim) {
+      const t = Math.min(1, (performance.now() - this.closureAnim.start) / CLOSURE_ANIM_MS);
+      const reveal = Math.min(1, t / 0.45); // draw on in the first 45%, fade after
+      const alpha = t < 0.45 ? 1 : 1 - (t - 0.45) / 0.55;
+      const pts = this.closureAnim.pts;
+      const count = Math.max(2, Math.ceil(pts.length * reveal));
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      for (let i = 0; i < count; i++) {
+        const s = this.w2s(pts[i].x, pts[i].y);
+        i === 0 ? ctx.moveTo(s.x, s.y) : ctx.lineTo(s.x, s.y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
     // freehand stroke
     if (this.drawing && this.drawing.length > 1) {
       ctx.strokeStyle = '#38bdf8';

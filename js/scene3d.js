@@ -155,11 +155,18 @@ function pathsToShapes(paths, filletRadius) {
   });
 }
 
+// paths are stored normalized to [-1,1] of the box half-extents; denormalize
+// into mm here so the silhouettes always track the current box dimensions.
+const VIEW_HALF_DIMS = { top: ['w', 'd'], front: ['w', 'h'], side: ['d', 'h'] };
+
 function extrusionBrush(view, layer, filletRadius) {
   const paths = layer.paths[view];
   if (!paths.length) return null;
   const { w, h, d } = layer.box;
-  const shapes = pathsToShapes(paths, filletRadius);
+  const [hDim, vDim] = VIEW_HALF_DIMS[view];
+  const hw = layer.box[hDim] / 2, hh = layer.box[vDim] / 2;
+  const mmPaths = paths.map((pts) => pts.map((p) => ({ x: p.x * hw, y: p.y * hh })));
+  const shapes = pathsToShapes(mmPaths, filletRadius);
   let depth, geo;
   if (view === 'front') {
     // shape (relX, relY), extrude along Z
