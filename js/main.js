@@ -1,7 +1,7 @@
 // Massing3D bootstrap: viewports, scene, menus, hotkeys.
 
 import { state, createLayer, resetProject, undo, redo, emit, activeLayer } from './state.js';
-import { SketchView, cancelAllSketches, sketchViews, adjustPendingCornerRadius } from './sketchview.js';
+import { SketchView, cancelAllSketches, sketchViews, adjustCornerRadius, interpretFocusedView } from './sketchview.js';
 import { initScene } from './scene3d.js';
 import { initUI, setTool, toggleSymmetry, setMaximized, applyLayout, showToast, closeSidePanel } from './ui.js';
 import { exportOBJ, exportSTL, saveProject, openProject, buildShareLink, loadFromHash } from './export.js';
@@ -75,7 +75,8 @@ document.getElementById('btn-share').addEventListener('click', async () => {
 
 // ---------------- industry-standard hotkeys ----------------
 // W select/move · L bezier · F freehand · R rect · E ellipse · S symmetry
-// [ / ] corner radius on a pending rect
+// Q interpret / clean up the focused view's profile (toggles raw <-> crisp)
+// [ / ] corner radius on a pending rect or an interpreted profile
 // Ctrl+Z / Ctrl+Y undo/redo · Esc exit fullscreen / cancel / deselect
 
 window.addEventListener('keydown', (e) => {
@@ -100,8 +101,9 @@ window.addEventListener('keydown', (e) => {
     case 'r': setTool('rect'); break;
     case 'e': setTool('ellipse'); break;
     case 's': toggleSymmetry(); break;
-    case '[': adjustPendingCornerRadius(-1); break;
-    case ']': adjustPendingCornerRadius(1); break;
+    case 'q': interpretFocusedView(); break;
+    case '[': adjustCornerRadius(-1); break;
+    case ']': adjustCornerRadius(1); break;
     case 'escape': {
       // priority: cancel in-progress sketch -> exit fullscreen -> deselect tool
       if (cancelAllSketches()) break;

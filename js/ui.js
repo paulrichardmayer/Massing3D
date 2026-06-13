@@ -2,10 +2,11 @@
 // maximize/fullscreen mechanics.
 
 import {
-  state, on, emit, touch, createLayer, deleteLayer, getLayer, activeLayer,
-  clearPaths, unitFactor,
+  state, on, emit, touch, getLayer, activeLayer, clearPaths, unitFactor,
+  addPart, deletePart, duplicatePart, setPartRole, renamePart, reorderPart,
+  setPartSharp, setPartRevolve,
 } from './state.js';
-import { redrawAll, getLastFocusedView, commitAllPendingShapes } from './sketchview.js';
+import { redrawAll, getLastFocusedView, commitAllPendingShapes, interpretFocusedView } from './sketchview.js';
 import { makeDockable, layoutDocked } from './dock.js';
 import { showToast } from './toast.js';
 
@@ -65,27 +66,66 @@ export function toggleSymmetry() {
   redrawAll();
 }
 
-// ---------------- layer strip ----------------
+// Master switch for auto clean-up on stroke finish. Flipping it marks the
+// preference as user-set, which overrides the pointerType default (mouse on /
+// stylus off) used until then.
+export function toggleAutoInterpret() {
+  state.autoInterpretUserSet = true;
+  state.autoInterpret = !state.autoInterpret;
+  $('#toggle-auto-interpret').classList.toggle('active', state.autoInterpret);
+  showToast(`Auto clean-up ${state.autoInterpret ? 'on' : 'off'}`);
+}
+
+// ---------------- part strip ----------------
+
+// Solo/isolate (Alt-click): hide every other part, remembering the prior
+// visibility so a second Alt-click restores it. View state only — not undoable.
+let soloSnapshot = null;
+
+function toggleSolo(id) {
+  if (soloSnapshot) {
+    for (const l of state.layers) {
+      if (l.id in soloSnapshot) l.visible = soloSnapshot[l.id];
+    }
+    soloSnapshot = null;
+    showToast('Solo off');
+  } else {
+    soloSnapshot = {};
+    for (const l of state.layers) { soloSnapshot[l.id] = l.visible; l.visible = (l.id === id); }
+    showToast('Isolated — Alt-click again to restore');
+  }
+  emit('change');
+  emit('meshAll'); // a cut must be visible to bite, so visibility affects CSG
+}
+
+let dragChipId = null;
 
 function renderLayerChips() {
   const wrap = $('#layer-chips');
   wrap.innerHTML = '';
   for (const layer of state.layers) {
+    const isCut = layer.role === 'cut';
     const chip = document.createElement('div');
-    chip.className = 'layer-chip' + (layer.id === state.activeLayerId ? ' active' : '') + (layer.visible ? '' : ' hidden-layer');
-    chip.dataset.tip = `${layer.name} — click to select & open settings`;
+    chip.className = 'layer-chip'
+      + (layer.id === state.activeLayerId ? ' active' : '')
+      + (layer.visible ? '' : ' hidden-layer')
+      + (isCut ? ' cut-part' : '');
+    chip.draggable = true;
+    chip.dataset.tip = `${layer.name}${isCut ? ' (cut)' : ''} — click to select · double-click to rename · Alt-click to isolate · ⋯ for more`;
 
     const dot = document.createElement('span');
-    dot.style.cssText = `width:8px;height:8px;border-radius:9999px;background:#${layer.color.toString(16).padStart(6, '0')}`;
+    dot.className = 'chip-dot';
+    dot.style.background = isCut ? '#ef4444' : `#${layer.color.toString(16).padStart(6, '0')}`;
     chip.appendChild(dot);
 
     const label = document.createElement('span');
+    label.className = 'chip-label';
     label.textContent = layer.name;
     chip.appendChild(label);
 
     const eye = document.createElement('button');
     eye.className = 'chip-eye';
-    eye.dataset.tip = layer.visible ? 'Hide layer' : 'Show layer';
+    eye.dataset.tip = layer.visible ? 'Hide part' : 'Show part';
     eye.innerHTML = layer.visible
       ? '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>'
       : '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.5 5.2A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.7 3.6M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7c1.8 0 3.4-.5 4.8-1.3"/></svg>';
@@ -93,16 +133,125 @@ function renderLayerChips() {
       e.stopPropagation();
       layer.visible = !layer.visible;
       emit('change');
+      emit('meshAll');
     });
     chip.appendChild(eye);
 
-    chip.addEventListener('click', () => {
+    const more = document.createElement('button');
+    more.className = 'chip-more';
+    more.dataset.tip = 'Part actions';
+    more.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+    more.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const r = more.getBoundingClientRect();
+      openPartMenu(layer.id, r.left, r.top);
+    });
+    chip.appendChild(more);
+
+    chip.addEventListener('click', (e) => {
+      if (e.altKey) { toggleSolo(layer.id); return; }
       state.activeLayerId = layer.id;
       openSidePanel();
       emit('change');
     });
+    chip.addEventListener('dblclick', (e) => { e.preventDefault(); startRename(chip, label, layer); });
+    chip.addEventListener('contextmenu', (e) => { e.preventDefault(); openPartMenu(layer.id, e.clientX, e.clientY); });
+
+    // drag to reorder
+    chip.addEventListener('dragstart', (e) => {
+      dragChipId = layer.id;
+      e.dataTransfer.effectAllowed = 'move';
+      chip.classList.add('dragging');
+    });
+    chip.addEventListener('dragend', () => {
+      dragChipId = null;
+      chip.classList.remove('dragging');
+      $$('.layer-chip').forEach((c) => c.classList.remove('drag-over'));
+    });
+    chip.addEventListener('dragover', (e) => {
+      if (dragChipId === null || dragChipId === layer.id) return;
+      e.preventDefault();
+      chip.classList.add('drag-over');
+    });
+    chip.addEventListener('dragleave', () => chip.classList.remove('drag-over'));
+    chip.addEventListener('drop', (e) => {
+      e.preventDefault();
+      chip.classList.remove('drag-over');
+      if (dragChipId === null || dragChipId === layer.id) return;
+      reorderPart(dragChipId, state.layers.findIndex((l) => l.id === layer.id));
+    });
+
     wrap.appendChild(chip);
   }
+}
+
+// Swap a chip's label for an inline text field to rename the part.
+function startRename(chip, label, layer) {
+  const input = document.createElement('input');
+  input.className = 'chip-rename';
+  input.value = layer.name;
+  chip.replaceChild(input, label);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true;
+    if (commit) renamePart(layer.id, input.value);
+    emit('change'); // re-render either way
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('click', (e) => e.stopPropagation());
+}
+
+// ---------------- part context menu ----------------
+
+function closePartMenu() {
+  $('#part-menu')?.remove();
+  document.removeEventListener('pointerdown', onMenuOutside, true);
+  window.removeEventListener('keydown', onMenuEsc, true);
+}
+function onMenuOutside(e) { if (!e.target.closest('#part-menu')) closePartMenu(); }
+function onMenuEsc(e) { if (e.key === 'Escape') { e.stopPropagation(); closePartMenu(); } }
+
+function openPartMenu(id, x, y) {
+  closePartMenu();
+  const layer = getLayer(id);
+  if (!layer) return;
+  const isCut = layer.role === 'cut';
+  const items = [
+    { label: 'Duplicate', act: () => { duplicatePart(id); showToast('Part duplicated'); } },
+    { label: 'Mirror duplicate (X)', act: () => { duplicatePart(id, { mirror: true }); showToast('Mirrored part created'); } },
+    { label: isCut ? 'Make Solid' : 'Make Cut', act: () => { setPartRole(id, isCut ? 'solid' : 'cut'); showToast(isCut ? 'Now a solid part' : 'Now a cut — subtracts overlapping solids'); } },
+    { label: 'Rename', act: () => { const chip = [...$$('.layer-chip')].find((c) => c.querySelector('.chip-label')?.textContent === layer.name); if (chip) startRename(chip, chip.querySelector('.chip-label'), layer); } },
+    { sep: true },
+    { label: 'Delete', danger: true, act: () => { deletePart(id); closeSidePanel(); showToast('Part deleted — Ctrl+Z to restore'); } },
+  ];
+  const menu = document.createElement('div');
+  menu.id = 'part-menu';
+  menu.className = 'floating-menu';
+  for (const it of items) {
+    if (it.sep) { const s = document.createElement('div'); s.className = 'menu-divider'; menu.appendChild(s); continue; }
+    const b = document.createElement('button');
+    b.className = 'part-menu-item' + (it.danger ? ' danger' : '');
+    b.textContent = it.label;
+    b.addEventListener('click', () => { closePartMenu(); it.act(); });
+    menu.appendChild(b);
+  }
+  document.body.appendChild(menu);
+  // place above-left of the trigger, clamped to the viewport
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  menu.style.left = Math.max(8, Math.min(x, window.innerWidth - mw - 8)) + 'px';
+  menu.style.top = Math.max(8, Math.min(y - mh - 6, window.innerHeight - mh - 8)) + 'px';
+  setTimeout(() => {
+    document.addEventListener('pointerdown', onMenuOutside, true);
+    window.addEventListener('keydown', onMenuEsc, true);
+  }, 0);
 }
 
 // ---------------- side contextual panel ----------------
@@ -125,6 +274,9 @@ function syncSidePanel() {
   if (!layer) { closeSidePanel(); return; }
   const f = unitFactor();
   $('#panel-layer-name').textContent = layer.name;
+  $$('.role-btn').forEach((b) => b.classList.toggle('active', b.dataset.role === (layer.role ?? 'solid')));
+  $('#toggle-sharp').classList.toggle('active', !!layer.sharp);
+  $('#toggle-revolve').classList.toggle('active', !!layer.revolve);
   $('#dim-w').value = +(layer.box.w / f).toFixed(3);
   $('#dim-h').value = +(layer.box.h / f).toFixed(3);
   $('#dim-d').value = +(layer.box.d / f).toFixed(3);
@@ -164,15 +316,34 @@ function bindSidePanel() {
     syncSidePanel();
   });
 
+  // Live blend: melt in real time while dragging (debounced so the worker isn't
+  // flooded); a final touch() on release settles it.
+  let blendTimer = null;
   $('#fillet-slider').addEventListener('input', (e) => {
     const layer = activeLayer();
     if (!layer) return;
     layer.fillet = (+e.target.value) / 100;
     $('#fillet-val').textContent = e.target.value + '%';
+    clearTimeout(blendTimer);
+    blendTimer = setTimeout(() => emit('mesh', layer), 40);
   });
   $('#fillet-slider').addEventListener('change', () => {
     const layer = activeLayer();
     if (layer) touch(layer);
+  });
+
+  // ---- surface mode (sharp / revolve) ----
+  $('#toggle-sharp').addEventListener('click', () => {
+    const layer = activeLayer();
+    if (!layer) return;
+    setPartSharp(layer.id, !layer.sharp);
+    showToast(layer.sharp ? 'Sharp mode — crisp boolean edges' : 'Smooth mode — SDF blend');
+  });
+  $('#toggle-revolve').addEventListener('click', () => {
+    const layer = activeLayer();
+    if (!layer) return;
+    setPartRevolve(layer.id, !layer.revolve);
+    showToast(layer.revolve ? 'Revolve — sketch the profile in Side view' : 'Revolve off');
   });
 
   // ---- underlay ----
@@ -235,7 +406,15 @@ function bindSidePanel() {
     syncSidePanel();
   });
 
-  // ---- layer actions ----
+  // ---- role (solid / cut) ----
+  $$('.role-btn').forEach((b) => b.addEventListener('click', () => {
+    const layer = activeLayer();
+    if (!layer) return;
+    setPartRole(layer.id, b.dataset.role);
+    showToast(b.dataset.role === 'cut' ? 'Cut — subtracts overlapping solids' : 'Solid part');
+  }));
+
+  // ---- part actions ----
   $('#btn-clear-sketches').addEventListener('click', () => {
     const layer = activeLayer();
     if (layer) clearPaths(layer);
@@ -243,9 +422,9 @@ function bindSidePanel() {
   $('#btn-delete-layer').addEventListener('click', () => {
     const layer = activeLayer();
     if (!layer) return;
-    deleteLayer(layer.id);
+    deletePart(layer.id);
     closeSidePanel();
-    emit('change');
+    showToast('Part deleted — Ctrl+Z to restore');
   });
 }
 
@@ -255,10 +434,9 @@ export function initUI() {
   bindSidePanel();
 
   $('#btn-add-layer').addEventListener('click', () => {
-    const layer = createLayer();
+    const layer = addPart();
     openSidePanel();
-    touch(layer);
-    showToast(`${layer.name} added — stacked on top`);
+    showToast(`${layer.name} added`);
   });
 
   // viewport visibility toggles
@@ -281,6 +459,11 @@ export function initUI() {
   // tools
   $$('.tool-btn').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
   $('#toggle-symmetry').addEventListener('click', toggleSymmetry);
+
+  // clean-up wand (an action, not a persistent tool) + its auto toggle
+  $('#btn-interpret').addEventListener('click', () => interpretFocusedView());
+  $('#toggle-auto-interpret').addEventListener('click', toggleAutoInterpret);
+  $('#toggle-auto-interpret').classList.toggle('active', state.autoInterpret);
 
   on('change', () => {
     renderLayerChips();

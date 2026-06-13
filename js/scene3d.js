@@ -3,10 +3,13 @@
 // drawing tools are always rejected in this view).
 
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { Brush, Evaluator, INTERSECTION } from 'three-bvh-csg';
-import { state, on, emit } from './state.js';
-import { roundCorners } from './geometry.js';
+import { Brush, Evaluator, INTERSECTION, SUBTRACTION } from 'three-bvh-csg';
+import { state, on, emit, kForLayer } from './state.js';
+import { tessellatePath } from './interpret.js';
+import { meshPart } from './sdf.js';
+
+const INTERACTIVE_RES = 96; // SDF grid cells along the longest axis
+const EXPORT_RES = 192;     // finer grid baked only at export time
 
 const evaluator = new Evaluator();
 evaluator.attributes = ['position', 'normal'];
@@ -19,7 +22,9 @@ const textureLoader = new THREE.TextureLoader();
 
 export function initScene(containerEl) {
   container = containerEl;
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  // preserveDrawingBuffer keeps the last frame readable for screenshots / canvas
+  // capture (the continuous render loop is unaffected).
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   container.appendChild(renderer.domElement);
 
@@ -28,6 +33,7 @@ export function initScene(containerEl) {
 
   camera = new THREE.PerspectiveCamera(45, 1, 1, 50000);
   camera.position.set(420, 340, 520);
+  camera.lookAt(0, 60, 0); // face the model from the start (matches the orbit target)
 
   const hemi = new THREE.HemisphereLight(0xe4e4e7, 0x27272a, 0.9);
   scene.add(hemi);
@@ -56,7 +62,8 @@ export function initScene(containerEl) {
 
   renderer.setAnimationLoop(() => renderer.render(scene, camera));
 
-  on('mesh', rebuildLayer);
+  on('mesh', rebuildAffected);
+  on('meshAll', rebuildAllMeshes);
   on('change', syncAllLayers);
 }
 
@@ -145,53 +152,252 @@ function dolly(factor) {
 // sketch) ∩ extrusion(side sketch). Views without sketches contribute no
 // constraint (the bounding box stands in for their infinite extrusion).
 
-function pathsToShapes(paths, filletRadius) {
-  return paths.map((pts) => {
-    const rounded = filletRadius > 0 ? roundCorners(pts, filletRadius) : pts;
-    const shape = new THREE.Shape();
-    rounded.forEach((p, i) => (i === 0 ? shape.moveTo(p.x, p.y) : shape.lineTo(p.x, p.y)));
-    shape.closePath();
-    return shape;
-  });
-}
-
 // paths are stored normalized to [-1,1] of the box half-extents; denormalize
 // into mm here so the silhouettes always track the current box dimensions.
 const VIEW_HALF_DIMS = { top: ['w', 'd'], front: ['w', 'h'], side: ['d', 'h'] };
 
-function extrusionBrush(view, layer, filletRadius) {
-  const paths = layer.paths[view];
-  if (!paths.length) return null;
+// World-space AABB overlap of two part boxes (used to decide which cuts bite
+// which solids without meshing every pair).
+function boxesOverlap(a, b) {
+  for (const [ax, dim] of [['x', 'w'], ['y', 'h'], ['z', 'd']]) {
+    if (Math.abs(a.position[ax] - b.position[ax]) > (a.box[dim] + b.box[dim]) / 2) return false;
+  }
+  return true;
+}
+
+function makeMaterial(layer, isCut, failed) {
+  return isCut
+    ? new THREE.MeshStandardMaterial({
+      color: 0xef4444, roughness: 0.5, metalness: 0,
+      transparent: true, opacity: 0.32, depthWrite: false,
+    })
+    : new THREE.MeshStandardMaterial({
+      color: layer.color, roughness: 0.5, metalness: 0.05,
+      transparent: !!failed, opacity: failed ? 0.5 : 1,
+    });
+}
+
+// ---------------- SDF descriptors ----------------
+// Tessellate a part's stored profiles into mm polygons planar to each view, then
+// package box + blend + cuts into the plain descriptor the SDF module consumes.
+
+function mmViews(layer) {
+  const out = { top: null, front: null, side: null };
+  for (const view of ['top', 'front', 'side']) {
+    const stored = layer.paths[view];
+    if (!stored || !stored.length) continue;
+    const [hDim, vDim] = VIEW_HALF_DIMS[view];
+    const hw = layer.box[hDim] / 2, hh = layer.box[vDim] / 2;
+    const regions = stored
+      .map((p) => tessellatePath(p))
+      .filter((pts) => pts.length >= 3)
+      .map((pts) => pts.map((p) => ({ x: p.x * hw, y: p.y * hh })));
+    if (regions.length) out[view] = regions;
+  }
+  return out;
+}
+
+function partDescriptor(layer, res) {
+  const { w, h, d } = layer.box;
+  return {
+    box: { hw: w / 2, hh: h / 2, hd: d / 2 },
+    k: kForLayer(layer),
+    revolve: !!layer.revolve,
+    views: mmViews(layer),
+    res,
+  };
+}
+
+// A solid's descriptor, plus the descriptors of cut parts overlapping it (each
+// with the offset that maps this part's local space into the cut's).
+function solidDescriptorWithCuts(layer, res) {
+  const desc = partDescriptor(layer, res);
+  desc.cuts = [];
+  for (const cut of state.layers) {
+    if (cut === layer || cut.role !== 'cut' || !cut.visible) continue;
+    if (!boxesOverlap(layer, cut)) continue;
+    const cd = partDescriptor(cut, res);
+    cd.offset = {
+      x: layer.position.x - cut.position.x,
+      y: layer.position.y - cut.position.y,
+      z: layer.position.z - cut.position.z,
+    };
+    desc.cuts.push(cd);
+  }
+  return desc;
+}
+
+// ---------------- async SDF meshing (Web Worker) ----------------
+// One worker meshes parts off the main thread; jobs coalesce per part so the
+// blend slider can fire freely. The previous mesh stays on screen until the new
+// one arrives.
+
+let meshWorker = null;
+let jobSeq = 0;
+let busyJob = null;
+const jobQueue = [];
+
+function ensureWorker() {
+  if (meshWorker) return meshWorker;
+  meshWorker = new Worker(new URL('./sdfworker.js', import.meta.url), { type: 'module' });
+  meshWorker.onmessage = (e) => {
+    const { id, positions, normals, indices, error } = e.data;
+    const job = busyJob;
+    busyJob = null;
+    if (job && job.id === id) {
+      if (error) console.warn('SDF worker error:', error);
+      else applySmoothResult(job.layerId, positions, normals, indices);
+    }
+    pumpJobs();
+  };
+  meshWorker.onerror = (e) => { console.warn('SDF worker crashed:', e.message); busyJob = null; };
+  return meshWorker;
+}
+
+function enqueueSmooth(layer) {
+  const id = ++jobSeq;
+  for (let i = jobQueue.length - 1; i >= 0; i--) {
+    if (jobQueue[i].layerId === layer.id) jobQueue.splice(i, 1); // keep newest only
+  }
+  jobQueue.push({ id, layerId: layer.id, desc: solidDescriptorWithCuts(layer, INTERACTIVE_RES) });
+  pumpJobs();
+}
+
+function pumpJobs() {
+  if (busyJob || !jobQueue.length) return;
+  ensureWorker();
+  busyJob = jobQueue.shift();
+  meshWorker.postMessage({ id: busyJob.id, desc: busyJob.desc });
+}
+
+function geometryFromArrays(positions, normals, indices) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  geo.setIndex(new THREE.BufferAttribute(indices, 1));
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+function applySmoothResult(layerId, positions, normals, indices) {
+  const layer = state.layers.find((l) => l.id === layerId);
+  const entry = layerGroups.get(layerId);
+  if (!layer || !entry || layer.sharp) return; // deleted or flipped to sharp meanwhile
+  const isCut = layer.role === 'cut';
+  if (entry.mesh) {
+    entry.group.remove(entry.mesh);
+    entry.mesh.geometry.dispose();
+    entry.mesh.material.dispose();
+  }
+  const mesh = new THREE.Mesh(geometryFromArrays(positions, normals, indices), makeMaterial(layer, isCut, false));
+  mesh.position.set(layer.position.x, layer.position.y, layer.position.z);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = isCut ? 1 : 0;
+  entry.mesh = mesh;
+  entry.isCut = isCut;
+  entry.group.add(mesh);
+  syncLayerVisibility(layer, entry);
+  projDirty = true;
+  emit('projection');
+}
+
+// ---------------- CSG meshing (per-part "Sharp mode") ----------------
+// Crisp boolean path retained behind the per-part Sharp toggle: box ∩ extrusions,
+// minus overlapping cuts. No blend — every edge stays hard.
+
+function extrusionBrush(view, layer) {
+  const stored = layer.paths[view];
+  if (!stored.length) return null;
   const { w, h, d } = layer.box;
   const [hDim, vDim] = VIEW_HALF_DIMS[view];
   const hw = layer.box[hDim] / 2, hh = layer.box[vDim] / 2;
-  const mmPaths = paths.map((pts) => pts.map((p) => ({ x: p.x * hw, y: p.y * hh })));
-  const shapes = pathsToShapes(mmPaths, filletRadius);
+  const paths = stored.map((p) => tessellatePath(p)).filter((pts) => pts.length >= 3);
+  if (!paths.length) return null;
+  const shapes = paths.map((pts) => {
+    const shape = new THREE.Shape();
+    pts.forEach((p, i) => (i === 0 ? shape.moveTo(p.x * hw, p.y * hh) : shape.lineTo(p.x * hw, p.y * hh)));
+    shape.closePath();
+    return shape;
+  });
   let depth, geo;
   if (view === 'front') {
-    // shape (relX, relY), extrude along Z
     depth = d * 1.04;
     geo = new THREE.ExtrudeGeometry(shapes, { depth, bevelEnabled: false });
     geo.translate(0, 0, -depth / 2);
   } else if (view === 'top') {
-    // shape (relX, relZ), extrude along Y: rotateX(+90°) maps shape-Y -> world Z
     depth = h * 1.04;
     geo = new THREE.ExtrudeGeometry(shapes, { depth, bevelEnabled: false });
     geo.rotateX(Math.PI / 2);
     geo.translate(0, depth / 2, 0);
   } else {
-    // side: shape (relZ, relY), extrude along X: rotateY(-90°) maps shape-X -> world Z
     depth = w * 1.04;
     geo = new THREE.ExtrudeGeometry(shapes, { depth, bevelEnabled: false });
     geo.rotateY(-Math.PI / 2);
     geo.translate(depth / 2, 0, 0);
   }
-  // Brushes stay in layer-local space (box center at origin); only the final
-  // mesh gets positioned in the world.
   const brush = new Brush(geo);
   brush.updateMatrixWorld();
   return brush;
 }
+
+function resolveSolidBrush(layer) {
+  const { w, h, d } = layer.box;
+  const boxBrush = new Brush(new THREE.BoxGeometry(w, h, d));
+  boxBrush.updateMatrixWorld();
+  let result = boxBrush;
+  let failed = false;
+  for (const view of ['top', 'front', 'side']) {
+    const brush = extrusionBrush(view, layer);
+    if (!brush) continue;
+    try {
+      result = evaluator.evaluate(result, brush, INTERSECTION);
+    } catch (err) {
+      console.warn('CSG intersection failed for', view, err);
+      failed = true;
+    }
+  }
+  return { brush: result, failed };
+}
+
+function rebuildLayerCSG(layer, entry) {
+  const isCut = layer.role === 'cut';
+  let { brush: result, failed } = resolveSolidBrush(layer);
+  if (!isCut) {
+    for (const cut of state.layers) {
+      if (cut === layer || cut.role !== 'cut' || !cut.visible) continue;
+      if (!boxesOverlap(layer, cut)) continue;
+      const { brush: cutBrush } = resolveSolidBrush(cut);
+      cutBrush.position.set(
+        cut.position.x - layer.position.x,
+        cut.position.y - layer.position.y,
+        cut.position.z - layer.position.z,
+      );
+      cutBrush.updateMatrixWorld();
+      try {
+        result = evaluator.evaluate(result, cutBrush, SUBTRACTION);
+      } catch (err) {
+        console.warn('CSG subtraction failed', err);
+        failed = true;
+      }
+    }
+  }
+  if (entry.mesh) {
+    entry.group.remove(entry.mesh);
+    entry.mesh.geometry.dispose();
+    entry.mesh.material.dispose();
+  }
+  const mesh = new THREE.Mesh(result.geometry.clone(), makeMaterial(layer, isCut, failed));
+  mesh.position.set(layer.position.x, layer.position.y, layer.position.z);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = isCut ? 1 : 0;
+  entry.mesh = mesh;
+  entry.isCut = isCut;
+  entry.group.add(mesh);
+  projDirty = true;
+  emit('projection');
+}
+
+// ---------------- per-part rebuild dispatch ----------------
 
 export function rebuildLayer(layer) {
   if (!layer || !scene) return;
@@ -202,53 +408,40 @@ export function rebuildLayer(layer) {
     entry = { group, mesh: null, outline: null, underlayMesh: null, underlaySrc: null };
     layerGroups.set(layer.id, entry);
   }
-
-  const { w, h, d } = layer.box;
-  const maxFillet = Math.min(w, h, d) * 0.45;
-  const filletRadius = layer.fillet * maxFillet;
-
-  // bounding box brush (rounded when fillet active)
-  const boxGeo = filletRadius > 0.5
-    ? new RoundedBoxGeometry(w, h, d, 3, filletRadius)
-    : new THREE.BoxGeometry(w, h, d);
-  const boxBrush = new Brush(boxGeo);
-  boxBrush.updateMatrixWorld();
-
-  let result = boxBrush;
-  let failed = false;
-  for (const view of ['top', 'front', 'side']) {
-    const brush = extrusionBrush(view, layer, filletRadius);
-    if (!brush) continue;
-    try {
-      result = evaluator.evaluate(result, brush, INTERSECTION);
-    } catch (err) {
-      console.warn('CSG intersection failed for', view, err);
-      failed = true;
-    }
-  }
-
-  if (entry.mesh) {
-    entry.group.remove(entry.mesh);
-    entry.mesh.geometry.dispose();
-  }
-  const material = new THREE.MeshStandardMaterial({
-    color: layer.color,
-    roughness: 0.55,
-    metalness: 0.05,
-    transparent: failed,
-    opacity: failed ? 0.5 : 1,
-  });
-  const mesh = new THREE.Mesh(result.geometry.clone(), material);
-  mesh.position.set(layer.position.x, layer.position.y, layer.position.z);
-  entry.mesh = mesh;
-  entry.group.add(mesh);
-
+  // chrome that doesn't depend on the solved surface updates immediately
   rebuildOutline(layer, entry);
   rebuildUnderlay(layer, entry);
   syncLayerVisibility(layer, entry);
+  // the solved surface: crisp CSG now, or smooth SDF on the worker. Revolve is
+  // an SDF-only operation, so a revolve part always meshes through the worker
+  // even when Sharp is set (a low blend still gives crisp lathe edges).
+  if (layer.sharp && !layer.revolve) rebuildLayerCSG(layer, entry);
+  else enqueueSmooth(layer);
+}
 
-  projDirty = true;
-  emit('projection');
+// Rebuild one part plus its dependents. A changed cut affects every solid (it may
+// have just moved AWAY from a solid it used to bite), so all solids re-mesh.
+function rebuildAffected(layer) {
+  if (!layer) { rebuildAllMeshes(); return; }
+  rebuildLayer(layer);
+  if (layer.role === 'cut') {
+    for (const o of state.layers) if (o !== layer && o.role !== 'cut') rebuildLayer(o);
+  }
+}
+
+// Full rebuild (after structural ops / undo / load). Drops groups for parts that
+// no longer exist, then rebuilds every remaining part.
+export function rebuildAllMeshes() {
+  if (!scene) return;
+  for (const [id, entry] of layerGroups) {
+    if (!state.layers.some((l) => l.id === id)) {
+      scene.remove(entry.group);
+      entry.mesh?.geometry.dispose();
+      entry.mesh?.material.dispose();
+      layerGroups.delete(id);
+    }
+  }
+  for (const l of state.layers) rebuildLayer(l);
 }
 
 function rebuildOutline(layer, entry) {
@@ -384,6 +577,8 @@ function renderProjections() {
   for (const entry of layerGroups.values()) {
     hide(entry.outline);
     hide(entry.underlayMesh);
+    // cut ghosts would fill the holes they carved — show only the solid result
+    if (entry.isCut) hide(entry.mesh);
   }
   const prevBg = scene.background;
   scene.background = null;
@@ -422,21 +617,25 @@ function renderProjections() {
   for (const obj of restore) obj.visible = true;
 }
 
-// Export-ready meshes (world transforms baked).
+// Export-ready meshes (world transforms baked). Smooth parts are re-meshed at
+// the finer export resolution here; sharp parts reuse their CSG geometry. Cuts
+// are tools, not output.
 export function getExportMeshes() {
   const meshes = [];
   for (const layer of state.layers) {
-    if (!layer.visible) continue;
-    const entry = layerGroups.get(layer.id);
-    if (!entry?.mesh) continue;
-    const clone = entry.mesh.clone();
-    clone.geometry = entry.mesh.geometry.clone();
-    clone.updateMatrixWorld(true);
-    clone.geometry.applyMatrix4(clone.matrixWorld);
-    clone.position.set(0, 0, 0);
-    clone.rotation.set(0, 0, 0);
-    clone.updateMatrixWorld(true);
-    meshes.push(clone);
+    if (!layer.visible || layer.role === 'cut') continue;
+    let geo;
+    if (layer.sharp && !layer.revolve) {
+      const entry = layerGroups.get(layer.id);
+      if (!entry?.mesh) continue;
+      geo = entry.mesh.geometry.clone();
+    } else {
+      const m = meshPart(solidDescriptorWithCuts(layer, EXPORT_RES));
+      if (!m.indices.length) continue;
+      geo = geometryFromArrays(m.positions, m.normals, m.indices);
+    }
+    geo.translate(layer.position.x, layer.position.y, layer.position.z);
+    meshes.push(new THREE.Mesh(geo));
   }
   return meshes;
 }

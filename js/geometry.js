@@ -47,40 +47,6 @@ export function chaikinClosed(points, iterations = 1) {
   return pts;
 }
 
-// Round the corners of a closed polygon by replacing each vertex with a
-// quadratic-bezier arc of the given radius. Used for the fillet modifier:
-// rounding the 2D profiles approximates rounded edge intersections along
-// each extrusion axis.
-export function roundCorners(points, radius, samples = 6) {
-  if (radius <= 0 || points.length < 3) return points.slice();
-  const n = points.length;
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const prev = points[(i - 1 + n) % n];
-    const curr = points[i];
-    const next = points[(i + 1) % n];
-    const dPrev = dist(curr, prev), dNext = dist(curr, next);
-    if (dPrev < 1e-6 || dNext < 1e-6) { out.push(curr); continue; }
-    const r = Math.min(radius, dPrev * 0.45, dNext * 0.45);
-    const p1 = {
-      x: curr.x + (prev.x - curr.x) * (r / dPrev),
-      y: curr.y + (prev.y - curr.y) * (r / dPrev),
-    };
-    const p2 = {
-      x: curr.x + (next.x - curr.x) * (r / dNext),
-      y: curr.y + (next.y - curr.y) * (r / dNext),
-    };
-    for (let s = 0; s <= samples; s++) {
-      const t = s / samples;
-      const mt = 1 - t;
-      out.push({
-        x: mt * mt * p1.x + 2 * mt * t * curr.x + t * t * p2.x,
-        y: mt * mt * p1.y + 2 * mt * t * curr.y + t * t * p2.y,
-      });
-    }
-  }
-  return out;
-}
 
 // Flatten a cubic bezier segment into line samples (excludes start point).
 export function sampleCubic(p0, c0, c1, p1, samples = 16) {

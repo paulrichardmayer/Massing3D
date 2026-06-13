@@ -4,12 +4,15 @@
 // Drawing happens here ONLY — the perspective view never receives sketches.
 
 import {
-  state, activeLayer, setViewPaths, touch, emit, on,
+  state, activeLayer, setViewPaths, recordPathsChange, recordPartMove, touch, emit, on,
 } from './state.js';
 import {
   dist, simplifyDP, chaikinClosed, flattenBezierPath, pathArea, mirrorPathH,
   smoothClosure, roundedRectPath, ellipsePath,
 } from './geometry.js';
+import {
+  interpretStoredPath, tessellatePath, isSegPath, adjustSegPathRadius,
+} from './interpret.js';
 import PolyBool from './vendor/polybool.js';
 import { getProjection } from './scene3d.js';
 import { showToast } from './toast.js';
@@ -24,6 +27,7 @@ const VIEW_CONFIGS = {
 
 const CLOSE_THRESHOLD_PX = 12;
 const CLOSURE_ANIM_MS = 650;
+const MORPH_MS = 250; // raw -> interpreted morph: the user must see the "aha"
 
 export const sketchViews = {};
 let lastFocusedView = 'front';
@@ -143,6 +147,13 @@ export class SketchView {
       }
 
       const tool = state.tool;
+      // A revolve part is defined by its Side profile only — block (and hint)
+      // drawing in the other views.
+      const drawTool = tool === 'freehand' || tool === 'bezier' || tool === 'rect' || tool === 'ellipse';
+      if (drawTool && this.name !== 'side' && activeLayer()?.revolve) {
+        showToast('Revolve part — sketch its profile in the Side view');
+        return;
+      }
       if (tool === 'rect' || tool === 'ellipse') {
         if (!activeLayer()) return;
         const w = this.s2w(p.x, p.y);
@@ -156,6 +167,7 @@ export class SketchView {
       } else if (tool === 'freehand') {
         if (!activeLayer()) return;
         this.drawing = [p];
+        this.drawingPointerType = e.pointerType || 'mouse';
         c.setPointerCapture(e.pointerId);
       } else if (tool === 'bezier') {
         this.bezierDown(p, e);
@@ -219,8 +231,10 @@ export class SketchView {
       }
       if (this.bezier?.pending) this.bezier.pending = false;
       if (this.dragLayer) {
+        const { layer, origPos } = this.dragLayer;
         this.dragLayer = null;
-        touch(activeLayer());
+        recordPartMove(layer.id, origPos); // undoable move (no-op if it didn't move)
+        touch(layer);
       }
     };
     c.addEventListener('pointerup', up);
@@ -263,6 +277,7 @@ export class SketchView {
   // ----- freehand -----
   finishFreehand() {
     const raw = this.drawing;
+    const pointerType = this.drawingPointerType || 'mouse';
     this.drawing = null;
     if (!raw || raw.length < 8) { this.draw(); return; }
     const layer = activeLayer();
@@ -282,7 +297,13 @@ export class SketchView {
       path = path.concat(bridge);
     }
     path = chaikinClosed(path, 1);
-    this.commitPath(layer, path);
+    const committed = this.commitPath(layer, path);
+
+    // Auto-interpret on stroke finish. Default: ON for mouse, OFF for stylus
+    // (detected via pointerType); a manual toggle overrides that default.
+    const auto = state.autoInterpret
+      && (state.autoInterpretUserSet || pointerType !== 'pen');
+    if (committed && auto) this.interpretProfile({ morph: true, silent: true });
   }
 
   startClosureAnim(worldPts) {
@@ -422,7 +443,12 @@ export class SketchView {
   // previous one, and Ctrl+Z restores it. The final form is always the
   // intersection of the three silhouettes within the box.
   commitPath(layer, worldPath) {
-    if (pathArea(worldPath) < 4) { this.draw(); return; }
+    if (pathArea(worldPath) < 4) { this.draw(); return false; }
+    if (layer.revolve && this.name !== 'side') {
+      showToast('Revolve part — sketch its profile in the Side view');
+      this.draw();
+      return false;
+    }
     const bp = this.boxPlanar(layer);
     const rel = worldPath.map((p) => ({
       x: +((p.x - bp.ch) / bp.hw).toFixed(5),
@@ -439,7 +465,7 @@ export class SketchView {
     if (!overlaps) {
       showToast('Sketch is outside the layer’s box — draw over the box outline');
       this.draw();
-      return;
+      return false;
     }
 
     // Boolean cleanup: repair self-intersecting strokes, and with symmetry on
@@ -447,12 +473,136 @@ export class SketchView {
     // yields one clean outline instead of two overlapping shapes (which would
     // self-intersect the extrusion brush and break CSG).
     const paths = cleanPaths(rel, state.symmetry ? mirrorPathH(rel, 0) : null);
-    if (!paths.length) { this.draw(); return; }
+    if (!paths.length) { this.draw(); return false; }
     const replaced = layer.paths[this.name].length > 0;
     setViewPaths(layer, this.name, paths);
     if (replaced) {
       const label = { top: 'Top', front: 'Front', side: 'Side' }[this.name];
       showToast(`${label} profile updated (Ctrl+Z restores the previous one)`);
+    }
+    return true;
+  }
+
+  // ----- sketch interpretation ("Clean up", wand / Q) -----
+  // Tolerances scale with how the user saw the stroke: aspect keeps arcs
+  // circular despite a non-square box, pxPerUnit ties every tolerance to
+  // on-screen pixels. (One u-space unit spans bp.hh mm => bp.hh*scale px.)
+  interpretCtx(layer) {
+    const bp = this.boxPlanar(layer);
+    return { bp, aspect: bp.hw / bp.hh, pxPerUnit: bp.hh * this.cam.scale };
+  }
+
+  // Toggle the focused view's profile between the raw stroke and its crisp
+  // interpretation, morphing between the two so the user sees the tool "get
+  // it". One Ctrl+Z restores whatever was there before.
+  interpretProfile({ morph = true, silent = false } = {}) {
+    const layer = activeLayer();
+    if (!layer) return false;
+    const stored = layer.paths[this.name];
+    if (!stored.length) {
+      if (!silent) showToast('Draw a profile first, then press Q to clean it up');
+      return false;
+    }
+
+    const fromArr = stored.map((p) => tessellatePath(p));
+
+    // already interpreted -> cycle back to the raw stroke
+    if (stored.some(isSegPath)) {
+      const out = stored.map((s) => (isSegPath(s) && Array.isArray(s.raw)
+        ? s.raw.map((p) => ({ x: p.x, y: p.y })) : s));
+      if (morph) this.startMorph(layer.id, fromArr, out.map((p) => tessellatePath(p)));
+      setViewPaths(layer, this.name, out);
+      if (!silent) showToast('Back to the raw stroke (Q cleans it up again)');
+      return true;
+    }
+
+    // raw -> interpreted, region by region; organic regions stay untouched
+    const { aspect, pxPerUnit } = this.interpretCtx(layer);
+    let changed = false;
+    const out = stored.map((region) => {
+      const seg = interpretStoredPath(tessellatePath(region), aspect, pxPerUnit);
+      if (seg) { changed = true; return seg; }
+      return region;
+    });
+    if (!changed) {
+      if (!silent) showToast('Reads as organic — kept exactly as drawn');
+      return false;
+    }
+    if (morph) this.startMorph(layer.id, fromArr, out.map((p) => tessellatePath(p)));
+    setViewPaths(layer, this.name, out);
+    if (!silent) showToast('Cleaned up — Q toggles raw · [ ] adjusts corner radius');
+    return true;
+  }
+
+  // Live corner-radius on an interpreted profile ([ / ]), coalesced into a
+  // single undo step per burst (matches the feel of Phase 1 rects).
+  adjustInterpretedRadius(dir) {
+    const layer = activeLayer();
+    if (!layer) return false;
+    const paths = layer.paths[this.name];
+    const segs = paths.filter(isSegPath);
+    if (!segs.length) return false;
+    if (!this.radiusSession || this.radiusSession.layer !== layer) {
+      this.radiusSession = { layer, view: this.name, before: JSON.parse(JSON.stringify(paths)) };
+    }
+    let changed = false;
+    for (const s of segs) changed = adjustSegPathRadius(s, dir) || changed;
+    if (changed) {
+      touch(layer);
+      clearTimeout(this.radiusTimer);
+      const sess = this.radiusSession;
+      this.radiusTimer = setTimeout(() => {
+        const after = JSON.parse(JSON.stringify(sess.layer.paths[sess.view]));
+        recordPathsChange(sess.layer, sess.view, sess.before, after);
+        if (this.radiusSession === sess) this.radiusSession = null;
+      }, 500);
+    }
+    return true; // consumed the key even if already at the radius limit
+  }
+
+  // ----- raw <-> interpreted morph (visual only; state is already final) -----
+  startMorph(layerId, fromArr, toArr) {
+    const regions = [];
+    const n = Math.min(fromArr.length, toArr.length);
+    for (let i = 0; i < n; i++) {
+      const from = resampleClosedN(fromArr[i], MORPH_SAMPLES);
+      const to = alignLoop(from, resampleClosedN(toArr[i], MORPH_SAMPLES));
+      if (from.length && to.length) regions.push({ from, to });
+    }
+    if (!regions.length) { this.draw(); return; }
+    this.morphAnim = { layerId, regions, start: performance.now() };
+    const tick = () => {
+      if (!this.morphAnim) return;
+      this.draw();
+      if (performance.now() - this.morphAnim.start >= MORPH_MS) {
+        this.morphAnim = null;
+        this.draw();
+      } else {
+        requestAnimationFrame(tick);
+      }
+    };
+    requestAnimationFrame(tick);
+  }
+
+  drawMorph(ctx, layer) {
+    const t = Math.min(1, (performance.now() - this.morphAnim.start) / MORPH_MS);
+    const e = t * t * (3 - 2 * t); // smoothstep
+    const bp = this.boxPlanar(layer);
+    const colorHex = '#' + layer.color.toString(16).padStart(6, '0');
+    for (const region of this.morphAnim.regions) {
+      ctx.beginPath();
+      region.from.forEach((a, i) => {
+        const b = region.to[i];
+        const x = a.x + (b.x - a.x) * e, y = a.y + (b.y - a.y) * e;
+        const s = this.w2s(bp.ch + x * bp.hw, bp.cv + y * bp.hh);
+        i === 0 ? ctx.moveTo(s.x, s.y) : ctx.lineTo(s.x, s.y);
+      });
+      ctx.closePath();
+      ctx.fillStyle = colorHex + '2e';
+      ctx.strokeStyle = colorHex;
+      ctx.lineWidth = 1.8;
+      ctx.fill();
+      ctx.stroke();
     }
   }
 
@@ -472,6 +622,7 @@ export class SketchView {
           layer,
           grabH: w.h - layer.position[this.cfg.hAxis],
           grabV: w.v - layer.position[this.cfg.vAxis],
+          origPos: { ...layer.position }, // for one coalesced move-undo on release
         };
         this.canvas.setPointerCapture(e.pointerId);
         emit('change');
@@ -491,12 +642,16 @@ export class SketchView {
     emit('change');
   }
 
-  // Snap dragged box faces flush / stacked against other layers' faces.
+  // Snap dragged box faces flush / stacked against other parts' faces, and snap
+  // the part's centerline to other parts' centers and the world origin.
   snapToOtherBoxes(layer, nh, nv) {
     const snapDist = 8 / this.cam.scale;
     const hw = layer.box[this.cfg.hDim] / 2;
     const hh = layer.box[this.cfg.vDim] / 2;
     let bestH = null, bestV = null;
+    // world centerline (origin) — keeps mirror-paired parts aligned to center
+    if (Math.abs(nh) < snapDist) bestH = { c: 0, d: Math.abs(nh) };
+    if (Math.abs(nv) < snapDist) bestV = { c: 0, d: Math.abs(nv) };
     for (const other of state.layers) {
       if (other === layer || !other.visible) continue;
       const ob = this.boxPlanar(other);
@@ -625,10 +780,17 @@ export class SketchView {
   }
 
   drawPaths(ctx, layer) {
+    // during a raw<->interpreted morph this view shows the tween instead
+    if (this.morphAnim && this.morphAnim.layerId === layer.id) {
+      this.drawMorph(ctx, layer);
+      return;
+    }
     const bp = this.boxPlanar(layer);
     const isActive = layer.id === state.activeLayerId;
     const colorHex = '#' + layer.color.toString(16).padStart(6, '0');
-    for (const path of layer.paths[this.name]) {
+    for (const stored of layer.paths[this.name]) {
+      const path = tessellatePath(stored);
+      if (path.length < 2) continue;
       ctx.beginPath();
       path.forEach((p, i) => {
         const s = this.w2s(bp.ch + p.x * bp.hw, bp.cv + p.y * bp.hh);
@@ -795,6 +957,68 @@ export class SketchView {
 
 export function redrawAll() {
   for (const v of Object.values(sketchViews)) v.draw();
+}
+
+const MORPH_SAMPLES = 96;
+
+// Resample a closed polygon to exactly n points spaced by arc length.
+function resampleClosedN(pts, n) {
+  if (!pts || pts.length < 2) return [];
+  let per = 0;
+  for (let i = 0; i < pts.length; i++) per += dist(pts[i], pts[(i + 1) % pts.length]);
+  if (per < 1e-9) return [];
+  const step = per / n;
+  const out = [];
+  let i = 0, acc = 0;
+  let a = pts[0], b = pts[1 % pts.length], segLen = dist(a, b);
+  for (let k = 0; k < n; k++) {
+    const want = k * step;
+    while (acc + segLen < want && i < pts.length * 2) {
+      acc += segLen; i++;
+      a = pts[i % pts.length]; b = pts[(i + 1) % pts.length]; segLen = dist(a, b);
+    }
+    const t = segLen > 1e-12 ? (want - acc) / segLen : 0;
+    out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  }
+  return out;
+}
+
+// Rotate (and possibly reverse) `loop` to best line up with `ref` so the
+// morph travels the shortest, least-twisted way between the two shapes.
+function alignLoop(ref, loop) {
+  const n = loop.length;
+  if (ref.length !== n || n === 0) return loop;
+  const candidates = [loop, loop.slice().reverse()];
+  let best = loop, bestCost = Infinity;
+  const stride = Math.max(1, n >> 4); // coarse offset search is plenty for 250ms
+  for (const cand of candidates) {
+    for (let off = 0; off < n; off += stride) {
+      let cost = 0;
+      for (let i = 0; i < n; i += stride) {
+        const p = cand[(i + off) % n], q = ref[i];
+        cost += (p.x - q.x) ** 2 + (p.y - q.y) ** 2;
+      }
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = cand.map((_, i) => cand[(i + off) % n]);
+      }
+    }
+  }
+  return best;
+}
+
+// Route the wand button / Q key to whichever ortho view the user last touched.
+export function interpretFocusedView(opts) {
+  const v = sketchViews[lastFocusedView];
+  return v ? v.interpretProfile(opts) : false;
+}
+
+// [ / ] corner radius: a pending rect wins, otherwise the focused view's
+// interpreted profile (if any).
+export function adjustCornerRadius(dir) {
+  if (adjustPendingCornerRadius(dir)) return true;
+  const v = sketchViews[lastFocusedView];
+  return v ? v.adjustInterpretedRadius(dir) : false;
 }
 
 // Commit any rect still pending a corner-radius tweak (e.g. on tool change),

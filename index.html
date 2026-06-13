@@ -83,9 +83,9 @@
       <span class="drag-grip" data-tip="Drag to move — release near a corner to dock">
         <svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>
       </span>
-      <span class="text-[10px] uppercase tracking-wider text-zinc-500 px-1">Layers</span>
+      <span class="text-[10px] uppercase tracking-wider text-zinc-500 px-1">Parts</span>
       <div id="layer-chips" class="flex items-center gap-1"></div>
-      <button id="btn-add-layer" class="menu-btn !px-2" data-tip="Add a new 3D box layer (stacks on top)">
+      <button id="btn-add-layer" class="menu-btn !px-2" data-tip="Add a part — spawns beside the active one">
         <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
       </button>
     </div>
@@ -111,6 +111,12 @@
         <svg viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3Z"/></svg>
       </button>
       <span class="menu-sep"></span>
+      <button id="btn-interpret" class="menu-btn" data-tip="Clean Up (Q) — snap the focused view's freehand profile to crisp lines, arcs & rounded corners · press again to toggle back to the raw stroke">
+        <svg viewBox="0 0 24 24"><path d="M15 4V2M15 10V8M11 6H9M21 6h-2M19.5 9.5 18 8M11.5 1.5 10 0M4 22l11-11M14.5 4.5 19 9"/></svg>
+      </button>
+      <button id="toggle-auto-interpret" class="menu-btn" data-tip="Auto Clean-Up — interpret freehand strokes the moment you finish them (default: on for mouse, off for stylus)">
+        <svg viewBox="0 0 24 24"><path d="M5 3 3 5M19 3l2 2M9 11l-4 4 4 4M5 15h6a4 4 0 0 0 4-4V5"/></svg>
+      </button>
       <button id="toggle-symmetry" class="menu-btn" data-tip="Symmetry Mode (S) — mirror sketches across the vertical center of the box">
         <svg viewBox="0 0 24 24"><path d="M12 3v18" stroke-dasharray="3 3"/><path d="M8 7 4 12l4 5M16 7l4 5-4 5"/></svg>
       </button>
@@ -128,11 +134,27 @@
           <span class="drag-grip" data-tip="Drag to move — release near a corner to dock">
             <svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>
           </span>
-          <h3 id="panel-layer-name" class="text-sm font-semibold text-zinc-100">Layer</h3>
+          <h3 id="panel-layer-name" class="text-sm font-semibold text-zinc-100">Part</h3>
         </div>
         <button id="panel-close" class="menu-btn !px-1.5 !py-1" data-tip="Close panel">
           <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
+      </div>
+
+      <div>
+        <div class="panel-label">Role</div>
+        <div class="flex gap-1 mt-1">
+          <button class="menu-btn role-btn flex-1 justify-center" data-role="solid" data-tip="Solid — adds volume to the product">Solid</button>
+          <button class="menu-btn role-btn flex-1 justify-center" data-role="cut" data-tip="Cut — subtracted from solid parts it overlaps (grips, recesses, lens openings)">Cut</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel-label">Surface</div>
+        <div class="flex gap-1 mt-1">
+          <button id="toggle-sharp" class="menu-btn flex-1 justify-center" data-tip="Sharp mode — crisp boolean edges (CSG) instead of the smooth SDF blend. The Blend slider has no effect while on.">Sharp</button>
+          <button id="toggle-revolve" class="menu-btn flex-1 justify-center" data-tip="Revolve — lathe the Side profile around the vertical centerline (lenses, knobs, bottles). Other views become ghost-only.">Revolve</button>
+        </div>
       </div>
 
       <div>
@@ -150,8 +172,8 @@
       </div>
 
       <div>
-        <div class="panel-label flex justify-between"><span>Fillet / Chamfer</span><span id="fillet-val" class="text-zinc-500">0</span></div>
-        <input id="fillet-slider" type="range" min="0" max="100" value="0" class="w-full" data-tip="Rounds the sharp edge intersections of this layer's mesh" />
+        <div class="panel-label flex justify-between"><span>Blend (soft edges)</span><span id="fillet-val" class="text-zinc-500">0</span></div>
+        <input id="fillet-slider" type="range" min="0" max="100" value="0" class="w-full" data-tip="Melts every edge and intersection seam uniformly (SDF blend radius). 0 = crisp." />
       </div>
 
       <div>
@@ -180,8 +202,8 @@
       </div>
 
       <div class="flex gap-1.5 pt-1 border-t border-zinc-800">
-        <button id="btn-clear-sketches" class="menu-btn flex-1 justify-center" data-tip="Clear all sketches on this layer">Clear Sketches</button>
-        <button id="btn-delete-layer" class="menu-btn flex-1 justify-center !text-red-400" data-tip="Delete this layer">Delete</button>
+        <button id="btn-clear-sketches" class="menu-btn flex-1 justify-center" data-tip="Clear all sketches on this part">Clear Sketches</button>
+        <button id="btn-delete-layer" class="menu-btn flex-1 justify-center !text-red-400" data-tip="Delete this part (Ctrl+Z to restore)">Delete</button>
       </div>
     </aside>
 
