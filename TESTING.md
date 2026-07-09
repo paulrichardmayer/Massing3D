@@ -66,6 +66,20 @@ migration, dependency-free). Manual checks:
 - [ ] OBJ/STL export of an extruded part with draft + twist is watertight (worker path, finer grid).
 - [ ] A Cut part with the Extrude process carves a drafted/twisted recess.
 
+## Phase 7 — 3D-print preview (analyzer) ✅
+
+Automated coverage: support-area math in `tests/processes.test.mjs`-style node
+checks (see `js/printpreview.js` — `computeSupportStats` is three-free). Manual
+checks (verified via scripted Chromium run on a horizontal cylinder):
+
+- [x] **Print** button toggles the preview + dockable panel; solids get layer banding, cuts stay red ghosts.
+- [x] Overhang readout is physical: a horizontal cylinder reads MORE support area as the threshold tightens (24.2% @ 20° → 14.1% @ 45° → none @ 80°, where only the bed-exempt bottom faces that steeply down).
+- [x] **Build progress** scrub removes material above the cut, shows the interior as flat infill-orange, glows the current layer amber.
+- [x] Re-meshing while the preview is on (Blend drag) returns an analyzed mesh and refreshes the support readout.
+- [x] Toggle off restores the standard materials exactly; ortho ghosts always show the whole part (scrub is lifted for projection renders).
+- [x] No console errors through all of the above.
+- [ ] Multi-part build: two solids at different heights share one plate/build range.
+
 ---
 
 ## Performance targets

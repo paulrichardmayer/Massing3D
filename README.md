@@ -60,6 +60,17 @@ Click a chip to open its panel:
 - **New / Save / Open** — projects round-trip as `.json` (underlay images included)
 - **OBJ / STL** — exports the visible solid parts as a watertight mesh, re-meshed at a finer resolution at export time (cut parts are tools, not output)
 - **Share** — copies a link with the whole project encoded in the URL (underlay images excluded for size)
+- **Print** — toggles the **3D-print preview** analyzer
+
+## 3D-print preview (analyzer)
+
+A render-layer mode on the finished solids — no geometry is generated or modified, so it is always in sync with the model and free to leave on while editing:
+
+- **FDM layer lines** shade every surface at the chosen **layer height** (derivative-anti-aliased, so thin layers fade instead of moiré-ing)
+- Surfaces steeper than the **max overhang** angle glow **red — needs support** (bed-adjacent first layers are exempt), with a live **% of surface** readout
+- The **build progress** slider scrubs the print bottom-up: material above the cut vanishes, the exposed interior shows flat infill-orange, and the layer being printed glows amber
+
+Guidance only — indicative, not a slicer or DFM sign-off.
 
 ## Tech stack
 

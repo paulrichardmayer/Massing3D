@@ -36,11 +36,19 @@ export const state = {
   units: 'mm',
   visibleViews: { top: true, front: true, side: true, persp: true },
   maximized: null, // view name or null
+  // 3D-print preview (analyzer) — a render-layer mode, so like solo/maximize it
+  // is view state: not serialized, not undoable.
+  //   layerH   — FDM layer height in mm (drives the banding shader)
+  //   overhang — max printable overhang angle in degrees from vertical; steeper
+  //              downward-facing surfaces are flagged "needs support"
+  //   progress — build-height scrub, 0..1 of the model's world Y span
+  print: { on: false, layerH: 1, overhang: 45, progress: 1 },
 };
 
 // 'mesh' rebuilds the CSG for one part (+ its dependents); 'meshAll' rebuilds
 // every part (used after structural ops that can reshuffle cut/solid relations).
-const listeners = { change: [], layers: [], mesh: [], meshAll: [], projection: [] };
+// 'print' re-applies the 3D-print-preview analyzer (material swap + uniforms).
+const listeners = { change: [], layers: [], mesh: [], meshAll: [], projection: [], print: [] };
 
 export function on(event, fn) { listeners[event].push(fn); }
 

@@ -7,6 +7,7 @@ import { Brush, Evaluator, INTERSECTION, SUBTRACTION } from 'three-bvh-csg';
 import { state, on, emit, kForLayer } from './state.js';
 import { tessellatePath } from './interpret.js';
 import { meshPart } from './sdf.js';
+import { patchPrintMaterial, syncPrintUniforms, printUniforms, computeSupportStats } from './printpreview.js';
 
 const INTERACTIVE_RES = 96; // SDF grid cells along the longest axis
 const EXPORT_RES = 192;     // finer grid baked only at export time
@@ -65,6 +66,7 @@ export function initScene(containerEl) {
   on('mesh', rebuildAffected);
   on('meshAll', rebuildAllMeshes);
   on('change', syncAllLayers);
+  on('print', applyPrintPreview);
 }
 
 // ---------------- navigation (orbit / pan / zoom) ----------------
@@ -166,15 +168,19 @@ function boxesOverlap(a, b) {
 }
 
 function makeMaterial(layer, isCut, failed) {
-  return isCut
-    ? new THREE.MeshStandardMaterial({
+  if (isCut) {
+    return new THREE.MeshStandardMaterial({
       color: 0xef4444, roughness: 0.5, metalness: 0,
       transparent: true, opacity: 0.32, depthWrite: false,
-    })
-    : new THREE.MeshStandardMaterial({
-      color: layer.color, roughness: 0.5, metalness: 0.05,
-      transparent: !!failed, opacity: failed ? 0.5 : 1,
     });
+  }
+  const mat = new THREE.MeshStandardMaterial({
+    color: layer.color, roughness: 0.5, metalness: 0.05,
+    transparent: !!failed, opacity: failed ? 0.5 : 1,
+  });
+  // 3D-print preview: analyzer shader on every solid (cuts are tools, not output)
+  if (state.print.on) patchPrintMaterial(mat);
+  return mat;
 }
 
 // ---------------- SDF descriptors ----------------
@@ -528,7 +534,63 @@ function syncAllLayers() {
     if (entry.mesh) entry.mesh.position.set(layer.position.x, layer.position.y, layer.position.z);
     if (entry.underlayMesh) rebuildUnderlay(layer, entry);
   }
+  if (state.print.on) refreshPrintUniforms(); // parts may have moved / hidden
   projDirty = true;
+}
+
+// ---------------- 3D-print preview (analyzer) ----------------
+// A render-layer mode: solid materials are swapped for the analyzer-patched
+// variant (layer banding / overhang tint / build scrub) and share one uniform
+// set, so slider drags update every part without re-meshing anything.
+
+function printBounds() {
+  let minY = Infinity, maxY = -Infinity;
+  for (const l of state.layers) {
+    if (!l.visible || l.role === 'cut') continue;
+    minY = Math.min(minY, l.position.y - l.box.h / 2);
+    maxY = Math.max(maxY, l.position.y + l.box.h / 2);
+  }
+  if (minY === Infinity) { minY = 0; maxY = 1; }
+  return { minY, maxY };
+}
+
+// Exported for the panel sliders: uniform-only refresh — the continuously
+// running render loop picks it up next frame, no material swap needed.
+export function refreshPrintUniforms() {
+  const { minY, maxY } = printBounds();
+  syncPrintUniforms(minY, maxY);
+}
+
+// Toggle / re-apply: swap every solid's material (patched or plain), then
+// refresh the shared uniforms. Uniform-only changes ride the same path — the
+// swap is cheap and keeps one code path.
+function applyPrintPreview() {
+  refreshPrintUniforms();
+  for (const layer of state.layers) {
+    const entry = layerGroups.get(layer.id);
+    if (!entry?.mesh || entry.isCut) continue;
+    entry.mesh.material.dispose();
+    entry.mesh.material = makeMaterial(layer, false, false);
+  }
+  projDirty = true;
+  emit('projection');
+}
+
+// World-space triangle soups of the visible solids, for the support-area
+// readout (positions are in part-local space; only the Y offset matters).
+export function getPrintStats() {
+  const geoms = [];
+  for (const layer of state.layers) {
+    if (!layer.visible || layer.role === 'cut') continue;
+    const geo = layerGroups.get(layer.id)?.mesh?.geometry;
+    if (!geo) continue;
+    geoms.push({
+      positions: geo.getAttribute('position').array,
+      indices: geo.getIndex()?.array ?? null,
+      offsetY: layer.position.y,
+    });
+  }
+  return computeSupportStats(geoms);
 }
 
 // ---------------- ortho ghost projections ----------------
@@ -591,6 +653,10 @@ function renderProjections() {
   }
   const prevBg = scene.background;
   scene.background = null;
+  // ghost projections always show the WHOLE part — lift the build scrub for
+  // the offscreen renders (layer bands / overhang tint may show through; fine)
+  const prevCutY = printUniforms.uCutY.value;
+  printUniforms.uCutY.value = 1e9;
 
   const D = 50000;
   for (const view of ['top', 'front', 'side']) {
@@ -623,6 +689,7 @@ function renderProjections() {
   }
 
   scene.background = prevBg;
+  printUniforms.uCutY.value = prevCutY;
   for (const obj of restore) obj.visible = true;
 }
 

@@ -7,6 +7,7 @@ import {
   setPartSharp, setPartProcess, setProcessParam,
 } from './state.js';
 import { redrawAll, getLastFocusedView, commitAllPendingShapes, interpretFocusedView } from './sketchview.js';
+import { refreshPrintUniforms, getPrintStats } from './scene3d.js';
 import { makeDockable, layoutDocked } from './dock.js';
 import { showToast } from './toast.js';
 
@@ -476,10 +477,63 @@ function bindSidePanel() {
   });
 }
 
+// ---------------- 3D-print preview panel ----------------
+// The analyzer is global view state (all visible solids), so it lives in its
+// own dockable panel, not the per-part settings.
+
+function updatePrintStats() {
+  if (!state.print.on) return;
+  const { pct } = getPrintStats();
+  $('#print-support-pct').textContent = pct >= 0.05 ? `${pct.toFixed(1)}% of surface` : 'none';
+}
+
+function setPrintPreview(on) {
+  if (state.print.on === on) return;
+  state.print.on = on;
+  $('#btn-print-preview').classList.toggle('active', on);
+  $('#print-panel').classList.toggle('hidden', !on);
+  $('#print-panel').classList.toggle('flex', on);
+  emit('print'); // scene3d swaps solid materials + refreshes uniforms
+  layoutDocked();
+  if (on) updatePrintStats();
+  showToast(on ? '3D-print preview — red = needs support' : 'Print preview off');
+}
+
+function bindPrintPanel() {
+  $('#btn-print-preview').addEventListener('click', () => setPrintPreview(!state.print.on));
+  $('#print-close').addEventListener('click', () => setPrintPreview(false));
+
+  // Sliders touch only the shared shader uniforms — the render loop shows the
+  // change next frame; no re-mesh, no material swap.
+  let statsTimer = null;
+  const bind = (sliderId, valId, key, fmt, affectsStats) => {
+    $(sliderId).addEventListener('input', (e) => {
+      const v = +e.target.value;
+      state.print[key] = key === 'progress' ? v / 100 : v;
+      $(valId).textContent = fmt(v);
+      refreshPrintUniforms();
+      if (affectsStats) {
+        clearTimeout(statsTimer);
+        statsTimer = setTimeout(updatePrintStats, 120);
+      }
+    });
+  };
+  bind('#print-layerh', '#print-layerh-val', 'layerH', (v) => `${v} mm`, true);
+  bind('#print-overhang', '#print-overhang-val', 'overhang', (v) => `${v}°`, true);
+  bind('#print-progress', '#print-progress-val', 'progress', (v) => `${v}%`, false);
+
+  // re-run the readout whenever a mesh lands while the preview is up
+  on('projection', () => {
+    clearTimeout(statsTimer);
+    statsTimer = setTimeout(updatePrintStats, 120);
+  });
+}
+
 // ---------------- init ----------------
 
 export function initUI() {
   bindSidePanel();
+  bindPrintPanel();
 
   $('#btn-add-layer').addEventListener('click', () => {
     const layer = addPart();
@@ -525,6 +579,7 @@ export function initUI() {
   // to whichever corner they're dropped near.
   makeDockable($('#menu-layers'), 'bottom-right', '.drag-grip');
   makeDockable($('#side-panel'), 'bottom-right', '.drag-grip');
+  makeDockable($('#print-panel'), 'bottom-left', '.drag-grip');
 
   setTool(state.tool);
   applyLayout();
