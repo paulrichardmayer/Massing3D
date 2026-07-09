@@ -103,7 +103,12 @@ function sdBox(x, y, z, hx, hy, hz) {
 
 // ---------------- part SDF compilation ----------------
 // Builds a fast closure sdf(x,y,z) for a part descriptor:
-//   { box:{hw,hh,hd}, k, revolve, views:{front,top,side}, cuts:[...] }
+//   { box:{hw,hh,hd}, k, process, params, views:{front,top,side}, cuts:[...] }
+// `process` selects the manufacturing generator:
+//   'massing' — intersection of up to three orthographic silhouettes (classic)
+//   'extrude' — ONE profile (params.view) swept along that view's normal axis,
+//               with draft (params.draftTan) and twist (params.twistRad)
+//   'turn'    — lathe the side profile around the vertical (Y) axis
 // Each `views.*` is an array of regions (each region an array of {x,y} in mm,
 // planar to that view). `cuts[i]` carries its own descriptor plus an offset that
 // maps this part's local point into the cut's local space.
@@ -112,29 +117,78 @@ const GRID_RES_2D = 160;
 
 function gridMargin(k) { return k * 0.5 + 4; }
 
+// The extrusion generator: profile planar to `view`, swept along the remaining
+// axis. Draft is a distance offset that grows linearly from the negative-axis
+// end (an exact erosion of the section — the SDF equivalent of pattern draft).
+// Twist inverse-rotates the sample point into profile space, linearly along
+// the sweep.
+function makeExtrudeSDF(box, k, v, params) {
+  const hw = box.hw, hh = box.hh, hd = box.hd;
+  const view = ['top', 'front', 'side'].includes(params.view) ? params.view : 'front';
+  // planar half-extents + sweep half-length per view
+  // (front: x,y along Z · top: x,z along Y · side: z,y along X)
+  const [pH, pV, hl] = view === 'front' ? [hw, hh, hd] : view === 'top' ? [hw, hd, hh] : [hd, hh, hw];
+  const draftTan = params.draftTan || 0;
+  const twistRad = params.twistRad || 0;
+  const regions = v[view] && v[view].length ? v[view] : null;
+  // a twisted query can reach the section's corner radius — inflate the grid
+  // so rotated samples stay inside it
+  const gHalf = twistRad ? Math.hypot(pH, pV) : 0;
+  const g = regions
+    ? buildGrid(regions, gHalf || pH, gHalf || pV, gridMargin(k), GRID_RES_2D)
+    : null;
+
+  return function extrudeSDF(x, y, z) {
+    let s = sdBox(x, y, z, hw, hh, hd);
+    if (!g) return s; // no profile yet: the part is just its box
+    let h, vv, a;
+    if (view === 'front') { h = x; vv = y; a = z; }
+    else if (view === 'top') { h = x; vv = z; a = y; }
+    else { h = z; vv = y; a = x; }
+    if (twistRad) {
+      const t = twistRad * (a + hl) / (2 * hl);
+      const c = Math.cos(t), sn = Math.sin(t);
+      const rh = c * h + sn * vv;
+      vv = -sn * h + c * vv;
+      h = rh;
+    }
+    let d2 = sampleGrid(g, h, vv);
+    if (draftTan) d2 += draftTan * (a + hl);
+    const slab = Math.abs(a) - hl;
+    return smax(s, d2 > slab ? d2 : slab, k);
+  };
+}
+
 export function compilePart(desc) {
   const box = desc.box;
   const k = desc.k || 0;
-  const revolve = !!desc.revolve;
+  const process = desc.process || (desc.revolve ? 'turn' : 'massing');
   const margin = gridMargin(k);
   const v = desc.views || {};
-  // half extents per view's planar axes (front: x,y · top: x,z · side: z,y)
-  const gFront = v.front && v.front.length ? buildGrid(v.front, box.hw, box.hh, margin, GRID_RES_2D) : null;
-  const gTop = v.top && v.top.length ? buildGrid(v.top, box.hw, box.hd, margin, GRID_RES_2D) : null;
-  const gSide = v.side && v.side.length ? buildGrid(v.side, box.hd, box.hh, margin, GRID_RES_2D) : null;
-
-  const cuts = (desc.cuts || []).map((c) => ({ sdf: compilePart(c), off: c.offset }));
   const hw = box.hw, hh = box.hh, hd = box.hd;
 
-  function solidSDF(x, y, z) {
-    let s = sdBox(x, y, z, hw, hh, hd);
-    if (revolve) {
-      // lathe the side profile around the vertical (Y) axis; radius = |xz|
+  let solidSDF;
+  if (process === 'turn') {
+    // lathe the side profile around the vertical (Y) axis; radius = |xz|
+    const gSide = v.side && v.side.length ? buildGrid(v.side, hd, hh, margin, GRID_RES_2D) : null;
+    solidSDF = function turnSDF(x, y, z) {
+      let s = sdBox(x, y, z, hw, hh, hd);
       if (gSide) {
         const r = Math.sqrt(x * x + z * z);
         s = smax(s, sampleGrid(gSide, r, y), k);
       }
-    } else {
+      return s;
+    };
+  } else if (process === 'extrude') {
+    solidSDF = makeExtrudeSDF(box, k, v, desc.params || {});
+  } else {
+    // massing: box ∩ every sketched silhouette
+    // half extents per view's planar axes (front: x,y · top: x,z · side: z,y)
+    const gFront = v.front && v.front.length ? buildGrid(v.front, hw, hh, margin, GRID_RES_2D) : null;
+    const gTop = v.top && v.top.length ? buildGrid(v.top, hw, hd, margin, GRID_RES_2D) : null;
+    const gSide = v.side && v.side.length ? buildGrid(v.side, hd, hh, margin, GRID_RES_2D) : null;
+    solidSDF = function massingSDF(x, y, z) {
+      let s = sdBox(x, y, z, hw, hh, hd);
       if (gFront) {
         const d2 = sampleGrid(gFront, x, y);
         s = smax(s, d2 > Math.abs(z) - hd ? d2 : Math.abs(z) - hd, k);
@@ -147,9 +201,11 @@ export function compilePart(desc) {
         const d2 = sampleGrid(gSide, z, y);
         s = smax(s, d2 > Math.abs(x) - hw ? d2 : Math.abs(x) - hw, k);
       }
-    }
-    return s;
+      return s;
+    };
   }
+
+  const cuts = (desc.cuts || []).map((c) => ({ sdf: compilePart(c), off: c.offset }));
 
   if (!cuts.length) return solidSDF;
 

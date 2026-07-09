@@ -4,7 +4,7 @@
 import {
   state, on, emit, touch, getLayer, activeLayer, clearPaths, unitFactor,
   addPart, deletePart, duplicatePart, setPartRole, renamePart, reorderPart,
-  setPartSharp, setPartRevolve,
+  setPartSharp, setPartProcess, setProcessParam,
 } from './state.js';
 import { redrawAll, getLastFocusedView, commitAllPendingShapes, interpretFocusedView } from './sketchview.js';
 import { makeDockable, layoutDocked } from './dock.js';
@@ -276,7 +276,20 @@ function syncSidePanel() {
   $('#panel-layer-name').textContent = layer.name;
   $$('.role-btn').forEach((b) => b.classList.toggle('active', b.dataset.role === (layer.role ?? 'solid')));
   $('#toggle-sharp').classList.toggle('active', !!layer.sharp);
-  $('#toggle-revolve').classList.toggle('active', !!layer.revolve);
+
+  const process = layer.process ?? 'massing';
+  const pp = layer.processParams ?? {};
+  $$('.process-btn').forEach((b) => b.classList.toggle('active', b.dataset.process === process));
+  const isExtrude = process === 'extrude';
+  $('#extrude-controls').classList.toggle('hidden', !isExtrude);
+  $('#extrude-controls').classList.toggle('flex', isExtrude);
+  if (isExtrude) {
+    $$('.profile-view-btn').forEach((b) => b.classList.toggle('active', b.dataset.profileview === (pp.profileView ?? 'front')));
+    $('#draft-slider').value = pp.draft ?? 0;
+    $('#draft-val').textContent = `${pp.draft ?? 0}°`;
+    $('#twist-slider').value = pp.twist ?? 0;
+    $('#twist-val').textContent = `${pp.twist ?? 0}°`;
+  }
   $('#dim-w').value = +(layer.box.w / f).toFixed(3);
   $('#dim-h').value = +(layer.box.h / f).toFixed(3);
   $('#dim-d').value = +(layer.box.d / f).toFixed(3);
@@ -332,19 +345,54 @@ function bindSidePanel() {
     if (layer) touch(layer);
   });
 
-  // ---- surface mode (sharp / revolve) ----
+  // ---- surface mode (sharp) ----
   $('#toggle-sharp').addEventListener('click', () => {
     const layer = activeLayer();
     if (!layer) return;
     setPartSharp(layer.id, !layer.sharp);
     showToast(layer.sharp ? 'Sharp mode — crisp boolean edges' : 'Smooth mode — SDF blend');
   });
-  $('#toggle-revolve').addEventListener('click', () => {
+
+  // ---- manufacturing process ----
+  const PROCESS_HINTS = {
+    massing: 'Massing — sketch silhouettes in any view',
+    extrude: 'Extrusion — draw ONE cross-section in the highlighted profile view',
+    turn: 'Turning — sketch the profile in the Side view',
+  };
+  $$('.process-btn').forEach((b) => b.addEventListener('click', () => {
     const layer = activeLayer();
-    if (!layer) return;
-    setPartRevolve(layer.id, !layer.revolve);
-    showToast(layer.revolve ? 'Revolve — sketch the profile in Side view' : 'Revolve off');
-  });
+    if (!layer || layer.process === b.dataset.process) return;
+    setPartProcess(layer.id, b.dataset.process);
+    showToast(PROCESS_HINTS[b.dataset.process]);
+  }));
+
+  $$('.profile-view-btn').forEach((b) => b.addEventListener('click', () => {
+    const layer = activeLayer();
+    if (!layer || layer.process !== 'extrude') return;
+    setProcessParam(layer, 'profileView', b.dataset.profileview);
+    touch(layer);
+    syncSidePanel();
+  }));
+
+  // Draft & twist behave like the Blend slider: live re-mesh while dragging
+  // (debounced so the worker isn't flooded), settled with touch() on release.
+  const bindProcessSlider = (sliderId, valId, key, fmt) => {
+    let timer = null;
+    $(sliderId).addEventListener('input', (e) => {
+      const layer = activeLayer();
+      if (!layer) return;
+      setProcessParam(layer, key, +e.target.value);
+      $(valId).textContent = fmt(+e.target.value);
+      clearTimeout(timer);
+      timer = setTimeout(() => emit('mesh', layer), 40);
+    });
+    $(sliderId).addEventListener('change', () => {
+      const layer = activeLayer();
+      if (layer) touch(layer);
+    });
+  };
+  bindProcessSlider('#draft-slider', '#draft-val', 'draft', (v) => `${v}°`);
+  bindProcessSlider('#twist-slider', '#twist-val', 'twist', (v) => `${v}°`);
 
   // ---- underlay ----
   $('#btn-underlay').addEventListener('click', () => $('#underlay-file').click());

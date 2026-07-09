@@ -197,12 +197,20 @@ function mmViews(layer) {
   return out;
 }
 
+const DEG = Math.PI / 180;
+
 function partDescriptor(layer, res) {
   const { w, h, d } = layer.box;
+  const pp = layer.processParams ?? {};
   return {
     box: { hw: w / 2, hh: h / 2, hd: d / 2 },
     k: kForLayer(layer),
-    revolve: !!layer.revolve,
+    process: layer.process ?? 'massing',
+    params: {
+      view: pp.profileView ?? 'front',
+      draftTan: Math.tan((pp.draft ?? 0) * DEG),
+      twistRad: (pp.twist ?? 0) * DEG,
+    },
     views: mmViews(layer),
     res,
   };
@@ -412,10 +420,11 @@ export function rebuildLayer(layer) {
   rebuildOutline(layer, entry);
   rebuildUnderlay(layer, entry);
   syncLayerVisibility(layer, entry);
-  // the solved surface: crisp CSG now, or smooth SDF on the worker. Revolve is
-  // an SDF-only operation, so a revolve part always meshes through the worker
-  // even when Sharp is set (a low blend still gives crisp lathe edges).
-  if (layer.sharp && !layer.revolve) rebuildLayerCSG(layer, entry);
+  // the solved surface: crisp CSG now, or smooth SDF on the worker. The
+  // Turn (lathe) and Extrude (draft / twist) processes are SDF-only, so those
+  // parts always mesh through the worker even when Sharp is set (a low blend
+  // still gives crisp edges).
+  if (layer.sharp && (layer.process ?? 'massing') === 'massing') rebuildLayerCSG(layer, entry);
   else enqueueSmooth(layer);
 }
 
@@ -625,7 +634,7 @@ export function getExportMeshes() {
   for (const layer of state.layers) {
     if (!layer.visible || layer.role === 'cut') continue;
     let geo;
-    if (layer.sharp && !layer.revolve) {
+    if (layer.sharp && (layer.process ?? 'massing') === 'massing') {
       const entry = layerGroups.get(layer.id);
       if (!entry?.mesh) continue;
       geo = entry.mesh.geometry.clone();

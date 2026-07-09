@@ -5,6 +5,7 @@
 
 import {
   state, activeLayer, setViewPaths, recordPathsChange, recordPartMove, touch, emit, on,
+  drivingView,
 } from './state.js';
 import {
   dist, simplifyDP, chaikinClosed, flattenBezierPath, pathArea, mirrorPathH,
@@ -32,6 +33,18 @@ const MORPH_MS = 250; // raw -> interpreted morph: the user must see the "aha"
 export const sketchViews = {};
 let lastFocusedView = 'front';
 export function getLastFocusedView() { return lastFocusedView; }
+
+// Turn / Extrude parts take sketches only in their driving view. Returns true
+// (after hinting where to draw) when `viewName` is the wrong view for `layer`.
+const VIEW_LABELS = { top: 'Top', front: 'Front', side: 'Side' };
+function wrongViewToast(layer, viewName) {
+  const dv = drivingView(layer);
+  if (!dv || dv === viewName) return false;
+  showToast(layer.process === 'turn'
+    ? 'Turned part — sketch its profile in the Side view'
+    : `Extrusion — sketch the cross-section in the ${VIEW_LABELS[dv]} view`);
+  return true;
+}
 
 // Union `path` with itself (resolving self-intersections) and, when given,
 // with `mirrored`. Operates in normalized box space. Falls back to the raw
@@ -147,13 +160,11 @@ export class SketchView {
       }
 
       const tool = state.tool;
-      // A revolve part is defined by its Side profile only — block (and hint)
-      // drawing in the other views.
+      // Turn / Extrude parts are defined by ONE view's profile — block (and
+      // hint) drawing in the other views.
       const drawTool = tool === 'freehand' || tool === 'bezier' || tool === 'rect' || tool === 'ellipse';
-      if (drawTool && this.name !== 'side' && activeLayer()?.revolve) {
-        showToast('Revolve part — sketch its profile in the Side view');
-        return;
-      }
+      const al = activeLayer();
+      if (drawTool && al && wrongViewToast(al, this.name)) return;
       if (tool === 'rect' || tool === 'ellipse') {
         if (!activeLayer()) return;
         const w = this.s2w(p.x, p.y);
@@ -444,8 +455,7 @@ export class SketchView {
   // intersection of the three silhouettes within the box.
   commitPath(layer, worldPath) {
     if (pathArea(worldPath) < 4) { this.draw(); return false; }
-    if (layer.revolve && this.name !== 'side') {
-      showToast('Revolve part — sketch its profile in the Side view');
+    if (wrongViewToast(layer, this.name)) {
       this.draw();
       return false;
     }

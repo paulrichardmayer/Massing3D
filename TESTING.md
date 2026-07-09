@@ -7,7 +7,7 @@ checks driven through the live modules; re-verify by hand after UI changes.
 ## Invariants (never break these)
 
 - [ ] Undo/redo covers sketches **and** part create / delete / duplicate / move / role / reorder.
-- [ ] `.json` Save → Open round-trips exactly (schema **v5**; older v1–v4 files migrate on load).
+- [ ] `.json` Save → Open round-trips exactly (schema **v6**; older v1–v5 files migrate on load — a v5 `revolve:true` part loads as the **Turn** process).
 - [ ] Share link encodes/decodes the whole project (minus underlay images).
 - [ ] OBJ and STL export produce a watertight mesh.
 
@@ -43,12 +43,28 @@ checks driven through the live modules; re-verify by hand after UI changes.
 - [ ] A Cut part still subtracts under the SDF pipeline, blended with the same `k`.
 - [ ] No console errors while dragging Blend or toggling Sharp.
 
-## Phase 5 — Revolve
+## Phase 5 — Revolve (now the **Turn** process)
 
 - [ ] Turn a part to **Revolve**, sketch a bottle half-profile in **Side** view → a clean lathe form (verify the circular cross-section in Top view).
 - [ ] On a Revolve part, drawing in Top/Front view is rejected with a one-line hint; Side view still works.
 - [ ] The **Blend** slider still softens a revolved form.
 - [ ] **Cut + Revolve** combine: a revolved Cut part carves a revolved recess into an overlapping solid; result stays watertight.
+
+## Phase 6 — Manufacturing processes (extrusion) ✅
+
+Automated coverage: `node tests/processes.test.mjs` (SDF generators + v5→v6
+migration, dependency-free). Manual checks:
+
+- [x] Process picker shows **Massing / Extrude / Turn**; Massing is the default and extrude controls stay hidden until Extrude is picked.
+- [x] **Extrude** + rectangle in the Front view → a crisp constant-section prism through the full depth (no silhouette mush), correct in all ghost projections.
+- [x] **Draft 10°** tapers the section toward the +axis end in real time; the base end stays full-size.
+- [x] **Twist 120°** spirals the section along the sweep; Draft and Twist compose.
+- [x] Drawing in a non-profile view on an Extrude part is rejected with a hint naming the right view; same for Turn (Side).
+- [x] Switching the profile view to one with no sketch leaves the part as its plain box (no crash).
+- [x] Undo/redo across process switches doesn't throw; switching back to Massing restores the silhouette pipeline.
+- [x] No console errors through all of the above (verified via scripted Chromium run).
+- [ ] OBJ/STL export of an extruded part with draft + twist is watertight (worker path, finer grid).
+- [ ] A Cut part with the Extrude process carves a drafted/twisted recess.
 
 ---
 

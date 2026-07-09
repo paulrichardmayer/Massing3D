@@ -11,6 +11,14 @@ const UNIT_FACTORS = { mm: 1, cm: 10, m: 1000 }; // internal unit is mm
 const LAYER_COLORS = [0x60a5fa, 0xf472b6, 0x4ade80, 0xfbbf24, 0xa78bfa, 0x2dd4bf, 0xfb923c, 0xe879f9];
 
 const NEW_BOX = { w: 160, h: 160, d: 240 };
+
+export const PROCESSES = ['massing', 'extrude', 'turn'];
+// Extrusion parameters: the profile is drawn in `profileView` and swept along
+// that view's normal axis (front => Z, top => Y, side => X). `draft` tapers the
+// section from the negative-axis end toward the positive end (degrees; the
+// molding/pattern draft designers expect). `twist` rotates the section linearly
+// along the sweep (total degrees end-to-end).
+const DEFAULT_PROCESS_PARAMS = { profileView: 'front', draft: 0, twist: 0 };
 export const SNAP_STEP = 20; // mm — duplicate offset / one nudge
 
 let nextLayerId = 1;
@@ -58,7 +66,14 @@ export function createLayer() {
     visible: true,
     role: 'solid', // 'solid' | 'cut'
     sharp: false,  // true => crisp CSG intersection; false => smooth SDF blend
-    revolve: false, // true => lathe the side profile around the vertical axis
+    // Manufacturing process — HOW this part's 3D form is generated:
+    //   'massing' — intersection of up to three orthographic silhouettes (classic)
+    //   'extrude' — ONE cross-section profile swept along that view's axis,
+    //               with optional draft (taper) and twist (see processParams)
+    //   'turn'    — lathe the Side profile around the vertical centerline
+    //               (formerly the `revolve` flag)
+    process: 'massing',
+    processParams: { ...DEFAULT_PROCESS_PARAMS },
     color: LAYER_COLORS[(id - 1) % LAYER_COLORS.length],
     box,
     position,
@@ -184,12 +199,28 @@ export function setPartSharp(id, sharp) {
   commitStructural(before, ba);
 }
 
-export function setPartRevolve(id, revolve) {
+export function setPartProcess(id, process) {
   const l = getLayer(id);
-  if (!l || !!l.revolve === !!revolve) return;
+  if (!l || !PROCESSES.includes(process) || l.process === process) return;
   const before = cloneLayers(), ba = state.activeLayerId;
-  l.revolve = !!revolve;
+  l.process = process;
   commitStructural(before, ba);
+}
+
+// Continuous process parameters (draft / twist sliders, profile-view pick).
+// Like the Blend slider, live drags mutate in place without an undo entry;
+// the caller re-meshes via touch()/emit('mesh').
+export function setProcessParam(layer, key, value) {
+  if (!layer.processParams) layer.processParams = { ...DEFAULT_PROCESS_PARAMS };
+  layer.processParams[key] = value;
+}
+
+// The single ortho view that defines a process part's geometry, or null when
+// every view contributes (massing). Sketching is rejected in the other views.
+export function drivingView(layer) {
+  if (layer.process === 'turn') return 'side';
+  if (layer.process === 'extrude') return layer.processParams?.profileView ?? 'front';
+  return null;
 }
 
 export function renamePart(id, name) {
@@ -315,7 +346,7 @@ export function redo() {
 
 export function serialize({ includeUnderlays = true } = {}) {
   return {
-    v: 5,
+    v: 6,
     units: state.units,
     activeLayerId: state.activeLayerId,
     layers: state.layers.map((l) => ({
@@ -324,7 +355,8 @@ export function serialize({ includeUnderlays = true } = {}) {
       visible: l.visible,
       role: l.role ?? 'solid',
       sharp: !!l.sharp,
-      revolve: !!l.revolve,
+      process: l.process ?? 'massing',
+      processParams: { ...DEFAULT_PROCESS_PARAMS, ...(l.processParams ?? {}) },
       color: l.color,
       box: { ...l.box },
       position: { ...l.position },
@@ -346,6 +378,9 @@ export function serialize({ includeUnderlays = true } = {}) {
 // v4 -> v5: SDF pipeline. Each part gains `sharp` (false => smooth blend) and
 // `revolve` (false). `fillet` now drives the blend radius k instead of a CSG
 // rounded box, but its stored 0..1 value carries over unchanged.
+// v5 -> v6: manufacturing processes. The `revolve` flag generalizes into
+// `process` ('massing' | 'extrude' | 'turn') + `processParams` (profileView,
+// draft, twist). Old files: revolve:true => 'turn', otherwise 'massing'.
 const VIEW_HALF_DIMS = { top: ['w', 'd'], front: ['w', 'h'], side: ['d', 'h'] };
 
 // Rename only the auto-generated "Layer N" labels; user-chosen names are kept.
@@ -387,15 +422,31 @@ function migratePathsV1(layer) {
   return out;
 }
 
+// v<=5 stored a `revolve` flag; v6 stores `process` + `processParams`.
+function migrateProcess(l) {
+  const p = l.process;
+  if (PROCESSES.includes(p)) return p;
+  return l.revolve ? 'turn' : 'massing';
+}
+
+function normalizeProcessParams(pp) {
+  const out = { ...DEFAULT_PROCESS_PARAMS };
+  if (['top', 'front', 'side'].includes(pp?.profileView)) out.profileView = pp.profileView;
+  if (isFinite(pp?.draft)) out.draft = Math.max(-30, Math.min(30, +pp.draft));
+  if (isFinite(pp?.twist)) out.twist = Math.max(-360, Math.min(360, +pp.twist));
+  return out;
+}
+
 export function deserialize(data) {
-  if (!data || ![1, 2, 3, 4, 5].includes(data.v) || !Array.isArray(data.layers)) throw new Error('Unrecognized project file');
+  if (!data || ![1, 2, 3, 4, 5, 6].includes(data.v) || !Array.isArray(data.layers)) throw new Error('Unrecognized project file');
   state.layers = data.layers.map((l) => ({
     id: l.id,
     name: migrateName(l.name, l.id),
     visible: l.visible !== false,
     role: l.role === 'cut' ? 'cut' : 'solid',
     sharp: !!l.sharp,
-    revolve: !!l.revolve,
+    process: migrateProcess(l),
+    processParams: normalizeProcessParams(l.processParams),
     color: l.color ?? LAYER_COLORS[0],
     box: { w: +l.box.w || 100, h: +l.box.h || 100, d: +l.box.d || 100 },
     position: { x: +l.position.x || 0, y: +l.position.y || 0, z: +l.position.z || 0 },

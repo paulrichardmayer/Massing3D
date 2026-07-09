@@ -150,10 +150,33 @@
       </div>
 
       <div>
+        <div class="panel-label">Process</div>
+        <div class="flex gap-1 mt-1">
+          <button class="menu-btn process-btn flex-1 justify-center" data-process="massing" data-tip="Massing — the form is the intersection of the silhouettes you sketch in the Top / Front / Side views">Massing</button>
+          <button class="menu-btn process-btn flex-1 justify-center" data-process="extrude" data-tip="Extrusion — ONE cross-section swept along its view's axis (profiles, rails, heat-sinks). Add draft to taper it, twist to spiral it.">Extrude</button>
+          <button class="menu-btn process-btn flex-1 justify-center" data-process="turn" data-tip="Turning — lathe the Side profile around the vertical centerline (lenses, knobs, bottles). Other views become ghost-only.">Turn</button>
+        </div>
+        <div id="extrude-controls" class="hidden flex-col gap-2 mt-2">
+          <div class="flex gap-1">
+            <button class="menu-btn flex-1 justify-center profile-view-btn" data-profileview="top" data-tip="Cross-section drawn in the Top view, swept vertically (Y)">Top</button>
+            <button class="menu-btn flex-1 justify-center profile-view-btn" data-profileview="front" data-tip="Cross-section drawn in the Front view, swept through the depth (Z)">Front</button>
+            <button class="menu-btn flex-1 justify-center profile-view-btn" data-profileview="side" data-tip="Cross-section drawn in the Side view, swept along the width (X)">Side</button>
+          </div>
+          <div>
+            <div class="panel-label flex justify-between"><span>Draft (taper)</span><span id="draft-val" class="text-zinc-500">0°</span></div>
+            <input id="draft-slider" type="range" min="-15" max="15" value="0" step="0.5" class="w-full" data-tip="Tapers the section along the sweep, like molding draft. Positive shrinks the far end." />
+          </div>
+          <div>
+            <div class="panel-label flex justify-between"><span>Twist</span><span id="twist-val" class="text-zinc-500">0°</span></div>
+            <input id="twist-slider" type="range" min="-180" max="180" value="0" step="5" class="w-full" data-tip="Rotates the section linearly along the sweep — total degrees end-to-end." />
+          </div>
+        </div>
+      </div>
+
+      <div>
         <div class="panel-label">Surface</div>
         <div class="flex gap-1 mt-1">
           <button id="toggle-sharp" class="menu-btn flex-1 justify-center" data-tip="Sharp mode — crisp boolean edges (CSG) instead of the smooth SDF blend. The Blend slider has no effect while on.">Sharp</button>
-          <button id="toggle-revolve" class="menu-btn flex-1 justify-center" data-tip="Revolve — lathe the Side profile around the vertical centerline (lenses, knobs, bottles). Other views become ghost-only.">Revolve</button>
         </div>
       </div>
 

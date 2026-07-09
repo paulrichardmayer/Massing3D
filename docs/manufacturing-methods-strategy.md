@@ -1,7 +1,9 @@
 # Strategy — Manufacturing Methods
 
 **Branch:** `Idea/ManufacturingMethods`
-**Status:** Draft for discussion (no code yet)
+**Status:** Phases 0–1 SHIPPED (process model + Extrusion generator with draft/twist;
+Revolve reframed as the Turn process). AI spike parked per §5.3. Next: Phase 2
+(3D-printing analyzer).
 **Author:** drafted with Claude, 2026-07-09
 
 ---
