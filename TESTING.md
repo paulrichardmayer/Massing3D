@@ -80,6 +80,21 @@ checks (verified via scripted Chromium run on a horizontal cylinder):
 - [x] No console errors through all of the above.
 - [ ] Multi-part build: two solids at different heights share one plate/build range.
 
+## Phase 8 — Injection-molding preview (analyzer) ✅
+
+Automated coverage: `node tests/mold.test.mjs` (undercut shadowing, thickness,
+area stats on analytic shapes). Manual checks (verified via scripted Chromium
+on a box with a cut hole through it):
+
+- [x] **Mold** button toggles the preview + panel; Draft view shows orange under-drafted walls, magenta undercut inside the hole, cyan parting ring where the surface turns through vertical (flat vertical walls do NOT flood cyan — they're a draft problem, not a parting line).
+- [x] Pull-axis physics: hole ⊥ pull → 23.6% undercut; pull along the hole axis → 0.0% undercut (releases through the openings).
+- [x] Thickness view: a solid block reads uniformly thick/red with a 40–240 mm range readout.
+- [x] Print and Mold previews are mutually exclusive — enabling one closes the other.
+- [x] Re-meshing while the preview is on (Blend drag) re-bakes undercut/thickness attributes.
+- [x] Loading a project through **Open** while previews exist round-trips v6 cleanly.
+- [x] No console errors through all of the above.
+- [ ] Undercut bake cost on very dense parts (export-res meshes) — watch for hitching.
+
 ---
 
 ## Performance targets

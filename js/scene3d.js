@@ -6,8 +6,9 @@ import * as THREE from 'three';
 import { Brush, Evaluator, INTERSECTION, SUBTRACTION } from 'three-bvh-csg';
 import { state, on, emit, kForLayer } from './state.js';
 import { tessellatePath } from './interpret.js';
-import { meshPart } from './sdf.js';
+import { meshPart, compilePart } from './sdf.js';
 import { patchPrintMaterial, syncPrintUniforms, printUniforms, computeSupportStats } from './printpreview.js';
+import { patchMoldMaterial, syncMoldUniforms, analyzeMoldGeometry, computeMoldStats } from './moldpreview.js';
 
 const INTERACTIVE_RES = 96; // SDF grid cells along the longest axis
 const EXPORT_RES = 192;     // finer grid baked only at export time
@@ -67,6 +68,7 @@ export function initScene(containerEl) {
   on('meshAll', rebuildAllMeshes);
   on('change', syncAllLayers);
   on('print', applyPrintPreview);
+  on('mold', applyMoldPreview);
 }
 
 // ---------------- navigation (orbit / pan / zoom) ----------------
@@ -178,8 +180,10 @@ function makeMaterial(layer, isCut, failed) {
     color: layer.color, roughness: 0.5, metalness: 0.05,
     transparent: !!failed, opacity: failed ? 0.5 : 1,
   });
-  // 3D-print preview: analyzer shader on every solid (cuts are tools, not output)
-  if (state.print.on) patchPrintMaterial(mat);
+  // analyzers patch every solid (cuts are tools, not output); the UI keeps the
+  // two previews mutually exclusive — mold wins if both are ever set
+  if (state.mold.on) patchMoldMaterial(mat);
+  else if (state.print.on) patchPrintMaterial(mat);
   return mat;
 }
 
@@ -311,6 +315,7 @@ function applySmoothResult(layerId, positions, normals, indices) {
   entry.isCut = isCut;
   entry.group.add(mesh);
   syncLayerVisibility(layer, entry);
+  if (state.mold.on && !isCut) scheduleMoldAnalysis(layer, entry);
   projDirty = true;
   emit('projection');
 }
@@ -407,6 +412,7 @@ function rebuildLayerCSG(layer, entry) {
   entry.mesh = mesh;
   entry.isCut = isCut;
   entry.group.add(mesh);
+  if (state.mold.on && !isCut) scheduleMoldAnalysis(layer, entry);
   projDirty = true;
   emit('projection');
 }
@@ -591,6 +597,65 @@ export function getPrintStats() {
     });
   }
   return computeSupportStats(geoms);
+}
+
+// ---------------- injection-molding preview (analyzer) ----------------
+// Draft heat + parting line are pure shader work; undercut shadowing and wall
+// thickness need the part's SDF, so each solid gets a CPU bake into vertex
+// attributes whenever the preview turns on, the pull axis changes, or a new
+// mesh lands while it's active.
+
+const moldTimers = new Map(); // layerId -> debounce timer for the bake
+
+function analyzeMoldFor(layer, entry) {
+  const geo = entry.mesh?.geometry;
+  if (!geo || entry.isCut) return;
+  const positions = geo.getAttribute('position').array;
+  const normals = geo.getAttribute('normal').array;
+  const sdf = compilePart(solidDescriptorWithCuts(layer, INTERACTIVE_RES));
+  const maxExt = Math.max(layer.box.w, layer.box.h, layer.box.d);
+  const cell = maxExt / INTERACTIVE_RES;
+  const bound = maxExt / 2 + kForLayer(layer) * 0.5 + 6;
+  const { undercut, thickness } = analyzeMoldGeometry(
+    { positions, normals }, sdf, { axis: state.mold.axis, cell, bound },
+  );
+  geo.setAttribute('aUndercut', new THREE.BufferAttribute(undercut, 1));
+  geo.setAttribute('aThickness', new THREE.BufferAttribute(thickness, 1));
+  entry.moldBake = { positions, indices: geo.getIndex()?.array ?? null, undercut, thickness };
+}
+
+function scheduleMoldAnalysis(layer, entry) {
+  clearTimeout(moldTimers.get(layer.id));
+  moldTimers.set(layer.id, setTimeout(() => {
+    if (!state.mold.on) return;
+    analyzeMoldFor(layer, entry);
+    emit('projection'); // lets the panel refresh its stats readout
+  }, 120));
+}
+
+function applyMoldPreview() {
+  syncMoldUniforms();
+  for (const layer of state.layers) {
+    const entry = layerGroups.get(layer.id);
+    if (!entry?.mesh || entry.isCut) continue;
+    entry.mesh.material.dispose();
+    entry.mesh.material = makeMaterial(layer, false, false);
+    if (state.mold.on) scheduleMoldAnalysis(layer, entry);
+  }
+  projDirty = true;
+  emit('projection');
+}
+
+export function refreshMoldUniforms() { syncMoldUniforms(); }
+
+export function getMoldStats() {
+  const parts = [];
+  for (const layer of state.layers) {
+    if (!layer.visible || layer.role === 'cut') continue;
+    const bake = layerGroups.get(layer.id)?.moldBake;
+    if (bake) parts.push(bake);
+  }
+  return computeMoldStats(parts);
 }
 
 // ---------------- ortho ghost projections ----------------

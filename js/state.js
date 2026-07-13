@@ -43,12 +43,21 @@ export const state = {
   //              downward-facing surfaces are flagged "needs support"
   //   progress — build-height scrub, 0..1 of the model's world Y span
   print: { on: false, layerH: 1, overhang: 45, progress: 1 },
+  // Injection-molding preview (analyzer) — same kind of view state.
+  //   mode     — 'draft' (draft heat-map + undercuts + parting line) or
+  //              'thickness' (wall-thickness heat-map)
+  //   axis     — mold pull direction: 'x' | 'y' | 'z' (two-part mold, ± axis)
+  //   minDraft — minimum release draft in degrees; flatter walls flag orange
+  //   tMin/tMax— healthy wall-thickness band in mm (thin = short-shot risk,
+  //              thick = sink marks)
+  mold: { on: false, mode: 'draft', axis: 'y', minDraft: 1, tMin: 1, tMax: 5 },
 };
 
 // 'mesh' rebuilds the CSG for one part (+ its dependents); 'meshAll' rebuilds
 // every part (used after structural ops that can reshuffle cut/solid relations).
-// 'print' re-applies the 3D-print-preview analyzer (material swap + uniforms).
-const listeners = { change: [], layers: [], mesh: [], meshAll: [], projection: [], print: [] };
+// 'print' / 'mold' re-apply the respective analyzer (material swap + uniforms;
+// 'mold' additionally re-runs the SDF undercut/thickness pass).
+const listeners = { change: [], layers: [], mesh: [], meshAll: [], projection: [], print: [], mold: [] };
 
 export function on(event, fn) { listeners[event].push(fn); }
 

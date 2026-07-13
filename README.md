@@ -61,6 +61,7 @@ Click a chip to open its panel:
 - **OBJ / STL** — exports the visible solid parts as a watertight mesh, re-meshed at a finer resolution at export time (cut parts are tools, not output)
 - **Share** — copies a link with the whole project encoded in the URL (underlay images excluded for size)
 - **Print** — toggles the **3D-print preview** analyzer
+- **Mold** — toggles the **injection-molding preview** analyzer (one analyzer at a time)
 
 ## 3D-print preview (analyzer)
 
@@ -71,6 +72,16 @@ A render-layer mode on the finished solids — no geometry is generated or modif
 - The **build progress** slider scrubs the print bottom-up: material above the cut vanishes, the exposed interior shows flat infill-orange, and the layer being printed glows amber
 
 Guidance only — indicative, not a slicer or DFM sign-off.
+
+## Injection-molding preview (analyzer)
+
+Pick a **pull direction** (the axis the two mold halves separate along) and every solid part is analyzed as its own molded component:
+
+- **Draft view** — walls flatter than the **min draft** angle tint orange (they'll scuff or stick); the **parting line** renders as a cyan band exactly where the surface crosses from the cavity half to the core half; **undercuts** — surfaces the geometry shadows along their own release direction (side holes, hooks) — tint magenta, detected by marching the part's signed distance field from every vertex
+- **Thickness view** — wall thickness measured through the part (blue = thinner than the healthy range → short-shot risk, green = healthy, red = thicker → sink marks), with a 5–95% range readout
+- Live stats: **% under-drafted · % undercut** area
+
+Same guidance-only caveat as the print preview.
 
 ## Tech stack
 

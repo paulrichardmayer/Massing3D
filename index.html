@@ -80,6 +80,10 @@
         <svg viewBox="0 0 24 24"><path d="M4 9h16M4 13h16M4 17h16"/><path d="M6 5h12l2 4H4l2-4Z"/></svg>
         <span>Print</span>
       </button>
+      <button id="btn-mold-preview" class="menu-btn" data-tip="Injection-molding preview — draft heat-map, undercut detection, parting line, and wall-thickness map for a chosen pull direction">
+        <svg viewBox="0 0 24 24"><path d="M4 4h16v7H4z"/><path d="M4 20h16v-7H4z"/><path d="M12 11v2"/></svg>
+        <span>Mold</span>
+      </button>
     </div>
 
     <!-- ============ Floating layer strip (draggable, docks to corners) ============ -->
@@ -267,6 +271,64 @@
         <div class="flex items-center gap-1.5"><span class="chip-dot" style="background:#f14c4c"></span><span>needs support</span><span id="print-support-pct" class="ml-auto text-zinc-500"></span></div>
         <div class="flex items-center gap-1.5"><span class="chip-dot" style="background:#ffb84d"></span><span>layer being printed</span></div>
         <div class="text-zinc-600">Guidance only — not a slicer or DFM sign-off.</div>
+      </div>
+    </aside>
+
+    <!-- ============ Injection-molding preview panel (analyzer) ============ -->
+    <aside id="mold-panel" class="fixed z-40 w-64 floating-menu !rounded-xl p-3 hidden flex-col gap-3" style="left:12px;bottom:64px">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-1.5">
+          <span class="drag-grip" data-tip="Drag to move — release near a corner to dock">
+            <svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg>
+          </span>
+          <h3 class="text-sm font-semibold text-zinc-100">Molding Preview</h3>
+        </div>
+        <button id="mold-close" class="menu-btn !px-1.5 !py-1" data-tip="Close preview">
+          <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div>
+        <div class="panel-label">Pull direction (mold opens along)</div>
+        <div class="flex gap-1 mt-1">
+          <button class="menu-btn flex-1 justify-center mold-axis-btn" data-axis="x" data-tip="Mold halves separate along X (width)">X</button>
+          <button class="menu-btn flex-1 justify-center mold-axis-btn" data-axis="y" data-tip="Mold halves separate along Y (height) — the usual top/bottom mold">Y</button>
+          <button class="menu-btn flex-1 justify-center mold-axis-btn" data-axis="z" data-tip="Mold halves separate along Z (depth)">Z</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel-label">View</div>
+        <div class="flex gap-1 mt-1">
+          <button class="menu-btn flex-1 justify-center mold-mode-btn" data-mode="draft" data-tip="Draft heat-map + undercuts + parting line">Draft</button>
+          <button class="menu-btn flex-1 justify-center mold-mode-btn" data-mode="thickness" data-tip="Wall-thickness heat-map (thin = short shot, thick = sink marks)">Thickness</button>
+        </div>
+      </div>
+
+      <div id="mold-draft-controls">
+        <div class="panel-label flex justify-between"><span>Min draft</span><span id="mold-draft-val" class="text-zinc-500">1°</span></div>
+        <input id="mold-draft" type="range" min="0.5" max="5" step="0.5" value="1" class="w-full" data-tip="Minimum release draft — walls flatter than this flag orange" />
+      </div>
+
+      <div id="mold-thickness-controls" class="hidden">
+        <div class="panel-label flex justify-between"><span>Wall range</span><span id="mold-t-val" class="text-zinc-500">1–5 mm</span></div>
+        <input id="mold-tmin" type="range" min="0.5" max="4" step="0.5" value="1" class="w-full" data-tip="Below this: short-shot risk (blue)" />
+        <input id="mold-tmax" type="range" min="2" max="12" step="0.5" value="5" class="w-full mt-1" data-tip="Above this: sink marks / long cycles (red)" />
+      </div>
+
+      <div class="text-xs text-zinc-400 flex flex-col gap-1 pt-1 border-t border-zinc-800">
+        <div id="mold-legend-draft" class="flex flex-col gap-1">
+          <div class="flex items-center gap-1.5"><span class="chip-dot" style="background:#fa9e26"></span><span>needs more draft</span></div>
+          <div class="flex items-center gap-1.5"><span class="chip-dot" style="background:#d9338c"></span><span>undercut — traps the mold</span></div>
+          <div class="flex items-center gap-1.5"><span class="chip-dot" style="background:#21d4ed"></span><span>parting line</span></div>
+        </div>
+        <div id="mold-legend-thickness" class="hidden flex-col gap-1">
+          <div class="flex items-center gap-1.5"><span class="chip-dot" style="background:#3b82f6"></span><span>thin — short-shot risk</span></div>
+          <div class="flex items-center gap-1.5"><span class="chip-dot" style="background:#42c96f"></span><span>healthy wall</span></div>
+          <div class="flex items-center gap-1.5"><span class="chip-dot" style="background:#f04545"></span><span>thick — sink marks</span></div>
+        </div>
+        <div id="mold-stats" class="text-zinc-500"></div>
+        <div class="text-zinc-600">Guidance only — not a DFM sign-off.</div>
       </div>
     </aside>
 

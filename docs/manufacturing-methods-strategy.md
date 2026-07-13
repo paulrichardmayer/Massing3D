@@ -1,10 +1,12 @@
 # Strategy — Manufacturing Methods
 
 **Branch:** `Idea/ManufacturingMethods`
-**Status:** Phases 0–2 SHIPPED. Phase 0–1: process model + Extrusion generator
+**Status:** Phases 0–3 SHIPPED. Phase 0–1: process model + Extrusion generator
 (draft/twist), Revolve reframed as Turn. Phase 2: 3D-print preview analyzer
-(layer lines, needs-support highlighting + % readout, build-height scrub). AI
-spike parked per §5.3. Next: Phase 3 (injection-molding analyzer).
+(layer lines, needs-support highlighting + % readout, build-height scrub).
+Phase 3: injection-molding analyzer (pull direction, draft heat-map, SDF-marched
+undercut detection, parting line, wall-thickness map). AI spike parked per §5.3.
+Next: Phase 4 (sheet metal / stamping generator).
 **Author:** drafted with Claude, 2026-07-09
 
 ---

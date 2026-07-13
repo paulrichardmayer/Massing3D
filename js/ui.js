@@ -7,7 +7,7 @@ import {
   setPartSharp, setPartProcess, setProcessParam,
 } from './state.js';
 import { redrawAll, getLastFocusedView, commitAllPendingShapes, interpretFocusedView } from './sketchview.js';
-import { refreshPrintUniforms, getPrintStats } from './scene3d.js';
+import { refreshPrintUniforms, getPrintStats, refreshMoldUniforms, getMoldStats } from './scene3d.js';
 import { makeDockable, layoutDocked } from './dock.js';
 import { showToast } from './toast.js';
 
@@ -489,6 +489,7 @@ function updatePrintStats() {
 
 function setPrintPreview(on) {
   if (state.print.on === on) return;
+  if (on) setMoldPreview(false); // one analyzer at a time
   state.print.on = on;
   $('#btn-print-preview').classList.toggle('active', on);
   $('#print-panel').classList.toggle('hidden', !on);
@@ -529,11 +530,99 @@ function bindPrintPanel() {
   });
 }
 
+// ---------------- injection-molding preview panel ----------------
+
+function updateMoldStats() {
+  if (!state.mold.on) return;
+  const s = getMoldStats();
+  $('#mold-stats').textContent = state.mold.mode === 'thickness'
+    ? `wall ${s.t05.toFixed(1)}–${s.t95.toFixed(1)} mm (5–95%)`
+    : `${s.lowDraftPct.toFixed(1)}% under-drafted · ${s.undercutPct.toFixed(1)}% undercut`;
+}
+
+function syncMoldPanelMode() {
+  const thick = state.mold.mode === 'thickness';
+  $$('.mold-mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === state.mold.mode));
+  $('#mold-draft-controls').classList.toggle('hidden', thick);
+  $('#mold-thickness-controls').classList.toggle('hidden', !thick);
+  $('#mold-legend-draft').classList.toggle('hidden', thick);
+  $('#mold-legend-draft').classList.toggle('flex', !thick);
+  $('#mold-legend-thickness').classList.toggle('hidden', !thick);
+  $('#mold-legend-thickness').classList.toggle('flex', thick);
+  updateMoldStats();
+}
+
+function setMoldPreview(on) {
+  if (state.mold.on === on) return;
+  if (on) setPrintPreview(false); // one analyzer at a time
+  state.mold.on = on;
+  $('#btn-mold-preview').classList.toggle('active', on);
+  $('#mold-panel').classList.toggle('hidden', !on);
+  $('#mold-panel').classList.toggle('flex', on);
+  emit('mold'); // scene3d swaps materials + bakes undercut/thickness
+  layoutDocked();
+  if (on) syncMoldPanelMode();
+  showToast(on
+    ? 'Molding preview — orange = needs draft, magenta = undercut, cyan = parting line'
+    : 'Molding preview off');
+}
+
+function bindMoldPanel() {
+  $('#btn-mold-preview').addEventListener('click', () => setMoldPreview(!state.mold.on));
+  $('#mold-close').addEventListener('click', () => setMoldPreview(false));
+
+  $$('.mold-axis-btn').forEach((b) => b.addEventListener('click', () => {
+    if (!state.mold.on || state.mold.axis === b.dataset.axis) return;
+    state.mold.axis = b.dataset.axis;
+    $$('.mold-axis-btn').forEach((x) => x.classList.toggle('active', x.dataset.axis === state.mold.axis));
+    emit('mold'); // the undercut bake depends on the pull direction
+    showToast(`Pull direction: ${state.mold.axis.toUpperCase()}`);
+  }));
+
+  $$('.mold-mode-btn').forEach((b) => b.addEventListener('click', () => {
+    if (state.mold.mode === b.dataset.mode) return;
+    state.mold.mode = b.dataset.mode;
+    refreshMoldUniforms(); // uniform-only — the bake covers both modes
+    syncMoldPanelMode();
+  }));
+
+  let moldStatsTimer = null;
+  const queueStats = () => { clearTimeout(moldStatsTimer); moldStatsTimer = setTimeout(updateMoldStats, 120); };
+
+  $('#mold-draft').addEventListener('input', (e) => {
+    state.mold.minDraft = +e.target.value;
+    $('#mold-draft-val').textContent = `${state.mold.minDraft}°`;
+    refreshMoldUniforms();
+    queueStats();
+  });
+  const syncTLabel = () => { $('#mold-t-val').textContent = `${state.mold.tMin}–${state.mold.tMax} mm`; };
+  $('#mold-tmin').addEventListener('input', (e) => {
+    state.mold.tMin = Math.min(+e.target.value, state.mold.tMax);
+    e.target.value = state.mold.tMin;
+    syncTLabel();
+    refreshMoldUniforms();
+  });
+  $('#mold-tmax').addEventListener('input', (e) => {
+    state.mold.tMax = Math.max(+e.target.value, state.mold.tMin);
+    e.target.value = state.mold.tMax;
+    syncTLabel();
+    refreshMoldUniforms();
+  });
+
+  // stats refresh when a bake lands (scene3d emits 'projection' afterwards)
+  on('projection', queueStats);
+
+  // defaults
+  $$('.mold-axis-btn').forEach((x) => x.classList.toggle('active', x.dataset.axis === state.mold.axis));
+  syncMoldPanelMode();
+}
+
 // ---------------- init ----------------
 
 export function initUI() {
   bindSidePanel();
   bindPrintPanel();
+  bindMoldPanel();
 
   $('#btn-add-layer').addEventListener('click', () => {
     const layer = addPart();
@@ -580,6 +669,7 @@ export function initUI() {
   makeDockable($('#menu-layers'), 'bottom-right', '.drag-grip');
   makeDockable($('#side-panel'), 'bottom-right', '.drag-grip');
   makeDockable($('#print-panel'), 'bottom-left', '.drag-grip');
+  makeDockable($('#mold-panel'), 'bottom-left', '.drag-grip');
 
   setTool(state.tool);
   applyLayout();
