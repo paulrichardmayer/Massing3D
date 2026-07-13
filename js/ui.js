@@ -291,6 +291,14 @@ function syncSidePanel() {
     $('#twist-slider').value = pp.twist ?? 0;
     $('#twist-val').textContent = `${pp.twist ?? 0}°`;
   }
+  const isStamp = process === 'stamp';
+  $('#stamp-controls').classList.toggle('hidden', !isStamp);
+  $('#stamp-controls').classList.toggle('flex', isStamp);
+  if (isStamp) {
+    $('#stamp-thickness').value = pp.thickness ?? 3;
+    $('#stamp-t-val').textContent = `${pp.thickness ?? 3} mm`;
+    $('#stamp-openface').value = pp.openFace ?? 'ny';
+  }
   $('#dim-w').value = +(layer.box.w / f).toFixed(3);
   $('#dim-h').value = +(layer.box.h / f).toFixed(3);
   $('#dim-d').value = +(layer.box.d / f).toFixed(3);
@@ -359,6 +367,7 @@ function bindSidePanel() {
     massing: 'Massing — sketch silhouettes in any view',
     extrude: 'Extrusion — draw ONE cross-section in the highlighted profile view',
     turn: 'Turning — sketch the profile in the Side view',
+    stamp: 'Stamping — your sketched form is the die; the part becomes its formed skin',
   };
   $$('.process-btn').forEach((b) => b.addEventListener('click', () => {
     const layer = activeLayer();
@@ -394,6 +403,14 @@ function bindSidePanel() {
   };
   bindProcessSlider('#draft-slider', '#draft-val', 'draft', (v) => `${v}°`);
   bindProcessSlider('#twist-slider', '#twist-val', 'twist', (v) => `${v}°`);
+  bindProcessSlider('#stamp-thickness', '#stamp-t-val', 'thickness', (v) => `${v} mm`);
+
+  $('#stamp-openface').addEventListener('change', (e) => {
+    const layer = activeLayer();
+    if (!layer || layer.process !== 'stamp') return;
+    setProcessParam(layer, 'openFace', e.target.value);
+    touch(layer);
+  });
 
   // ---- underlay ----
   $('#btn-underlay').addEventListener('click', () => $('#underlay-file').click());

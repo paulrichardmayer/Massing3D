@@ -79,6 +79,24 @@ const box = { hw: 80, hh: 80, hd: 120 };
   check('massing: clipped by both profiles', sdf(0, 60, 0) > 0);
 }
 
+// ---- 5b. stamp: constant-thickness skin over the die, open face peels ----
+{
+  const t = 6;
+  const mk = (openFace) => compilePart({
+    box, k: 0, process: 'stamp',
+    params: { thickness: t, openFace }, views: {}, // die = the plain box
+  });
+  const closed = mk('none');
+  check('stamp: center is hollow', closed(0, 0, 0) > 0);
+  check('stamp: skin straddles the die surface', closed(80, 0, 0) < 0 && closed(80 - t, 0, 0) > 0 && closed(80 + t, 0, 0) > 0);
+  check('stamp: bottom panel present when sealed', closed(0, -80, 0) < 0);
+  const tray = mk('ny');
+  check('stamp: open face removes the bottom panel', tray(0, -80, 0) > 0);
+  check('stamp: walls survive the open face', tray(80, 0, 0) < 0);
+  const m = meshPart({ box, k: 0, process: 'stamp', params: { thickness: t, openFace: 'ny' }, views: {}, res: 64 });
+  check('stamp: mesh non-empty', m.indices.length > 0);
+}
+
 // ---- 6. v5 -> v6 migration + round-trip ----
 {
   const v5 = {

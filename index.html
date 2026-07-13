@@ -159,10 +159,29 @@
 
       <div>
         <div class="panel-label">Process</div>
-        <div class="flex gap-1 mt-1">
+        <div class="grid grid-cols-2 gap-1 mt-1">
           <button class="menu-btn process-btn flex-1 justify-center" data-process="massing" data-tip="Massing — the form is the intersection of the silhouettes you sketch in the Top / Front / Side views">Massing</button>
           <button class="menu-btn process-btn flex-1 justify-center" data-process="extrude" data-tip="Extrusion — ONE cross-section swept along its view's axis (profiles, rails, heat-sinks). Add draft to taper it, twist to spiral it.">Extrude</button>
           <button class="menu-btn process-btn flex-1 justify-center" data-process="turn" data-tip="Turning — lathe the Side profile around the vertical centerline (lenses, knobs, bottles). Other views become ghost-only.">Turn</button>
+          <button class="menu-btn process-btn flex-1 justify-center" data-process="stamp" data-tip="Stamping / deep-draw — your sketched form becomes the die; the part becomes a constant-thickness skin formed over it (trays, enclosures, shells). Pick a face to leave open.">Stamp</button>
+        </div>
+        <div id="stamp-controls" class="hidden flex-col gap-2 mt-2">
+          <div>
+            <div class="panel-label flex justify-between"><span>Sheet thickness</span><span id="stamp-t-val" class="text-zinc-500">3 mm</span></div>
+            <input id="stamp-thickness" type="range" min="0.5" max="12" step="0.5" value="3" class="w-full" data-tip="Wall thickness of the formed skin" />
+          </div>
+          <div>
+            <div class="panel-label">Open face</div>
+            <select id="stamp-openface" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-md text-xs px-2 py-1" data-tip="Which side of the box is left open — the shell peels off that face (trays open down, enclosures open at the back…)">
+              <option value="ny">Bottom (−Y)</option>
+              <option value="py">Top (+Y)</option>
+              <option value="nx">Left (−X)</option>
+              <option value="px">Right (+X)</option>
+              <option value="nz">Back (−Z)</option>
+              <option value="pz">Front (+Z)</option>
+              <option value="none">None — sealed hollow</option>
+            </select>
+          </div>
         </div>
         <div id="extrude-controls" class="hidden flex-col gap-2 mt-2">
           <div class="flex gap-1">

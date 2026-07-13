@@ -159,6 +159,57 @@ function makeExtrudeSDF(box, k, v, params) {
   };
 }
 
+// The classic massing generator: box ∩ every sketched silhouette. Also serves
+// as the DIE for the stamp process, which shells it.
+function makeMassingSDF(box, k, v, margin) {
+  const hw = box.hw, hh = box.hh, hd = box.hd;
+  // half extents per view's planar axes (front: x,y · top: x,z · side: z,y)
+  const gFront = v.front && v.front.length ? buildGrid(v.front, hw, hh, margin, GRID_RES_2D) : null;
+  const gTop = v.top && v.top.length ? buildGrid(v.top, hw, hd, margin, GRID_RES_2D) : null;
+  const gSide = v.side && v.side.length ? buildGrid(v.side, hd, hh, margin, GRID_RES_2D) : null;
+  return function massingSDF(x, y, z) {
+    let s = sdBox(x, y, z, hw, hh, hd);
+    if (gFront) {
+      const d2 = sampleGrid(gFront, x, y);
+      s = smax(s, d2 > Math.abs(z) - hd ? d2 : Math.abs(z) - hd, k);
+    }
+    if (gTop) {
+      const d2 = sampleGrid(gTop, x, z);
+      s = smax(s, d2 > Math.abs(y) - hh ? d2 : Math.abs(y) - hh, k);
+    }
+    if (gSide) {
+      const d2 = sampleGrid(gSide, z, y);
+      s = smax(s, d2 > Math.abs(x) - hw ? d2 : Math.abs(x) - hw, k);
+    }
+    return s;
+  };
+}
+
+// The stamping / deep-draw generator: a constant-thickness skin formed over
+// the die (|die| - t/2), with one box face optionally left open so the result
+// is a tray / enclosure instead of a sealed hollow. The trim plane sits just
+// inside the face so the whole bottom panel peels away cleanly.
+function makeStampSDF(box, k, v, params) {
+  const t = Math.max(0.5, params.thickness || 3);
+  const die = makeMassingSDF(box, k, v, gridMargin(k) + t / 2);
+  const face = params.openFace || 'none';
+  const plane = {
+    py: (p) => (box.hh - t * 0.6) - p[1], ny: (p) => p[1] - (-box.hh + t * 0.6),
+    px: (p) => (box.hw - t * 0.6) - p[0], nx: (p) => p[0] - (-box.hw + t * 0.6),
+    pz: (p) => (box.hd - t * 0.6) - p[2], nz: (p) => p[2] - (-box.hd + t * 0.6),
+  }[face] ?? null;
+  const q = [0, 0, 0];
+  return function stampSDF(x, y, z) {
+    let s = Math.abs(die(x, y, z)) - t / 2;
+    if (plane) {
+      q[0] = x; q[1] = y; q[2] = z;
+      const trim = -plane(q); // positive beyond the open face -> removed
+      if (trim > s) s = trim;
+    }
+    return s;
+  };
+}
+
 export function compilePart(desc) {
   const box = desc.box;
   const k = desc.k || 0;
@@ -181,28 +232,10 @@ export function compilePart(desc) {
     };
   } else if (process === 'extrude') {
     solidSDF = makeExtrudeSDF(box, k, v, desc.params || {});
+  } else if (process === 'stamp') {
+    solidSDF = makeStampSDF(box, k, v, desc.params || {});
   } else {
-    // massing: box ∩ every sketched silhouette
-    // half extents per view's planar axes (front: x,y · top: x,z · side: z,y)
-    const gFront = v.front && v.front.length ? buildGrid(v.front, hw, hh, margin, GRID_RES_2D) : null;
-    const gTop = v.top && v.top.length ? buildGrid(v.top, hw, hd, margin, GRID_RES_2D) : null;
-    const gSide = v.side && v.side.length ? buildGrid(v.side, hd, hh, margin, GRID_RES_2D) : null;
-    solidSDF = function massingSDF(x, y, z) {
-      let s = sdBox(x, y, z, hw, hh, hd);
-      if (gFront) {
-        const d2 = sampleGrid(gFront, x, y);
-        s = smax(s, d2 > Math.abs(z) - hd ? d2 : Math.abs(z) - hd, k);
-      }
-      if (gTop) {
-        const d2 = sampleGrid(gTop, x, z);
-        s = smax(s, d2 > Math.abs(y) - hh ? d2 : Math.abs(y) - hh, k);
-      }
-      if (gSide) {
-        const d2 = sampleGrid(gSide, z, y);
-        s = smax(s, d2 > Math.abs(x) - hw ? d2 : Math.abs(x) - hw, k);
-      }
-      return s;
-    };
+    solidSDF = makeMassingSDF(box, k, v, margin);
   }
 
   const cuts = (desc.cuts || []).map((c) => ({ sdf: compilePart(c), off: c.offset }));
@@ -364,7 +397,9 @@ export function surfaceNets(sdf, half, res) {
 
 export function meshPart(desc) {
   const box = desc.box;
-  const margin = gridMargin(desc.k || 0);
+  let margin = gridMargin(desc.k || 0);
+  // a stamped skin extends t/2 OUTSIDE the die, which may touch the box faces
+  if (desc.process === 'stamp') margin += (desc.params?.thickness || 3) / 2;
   const half = { x: box.hw + margin, y: box.hh + margin, z: box.hd + margin };
   const sdf = compilePart(desc);
   return surfaceNets(sdf, half, desc.res || 96);

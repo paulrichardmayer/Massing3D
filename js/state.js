@@ -12,13 +12,18 @@ const LAYER_COLORS = [0x60a5fa, 0xf472b6, 0x4ade80, 0xfbbf24, 0xa78bfa, 0x2dd4bf
 
 const NEW_BOX = { w: 160, h: 160, d: 240 };
 
-export const PROCESSES = ['massing', 'extrude', 'turn'];
+export const PROCESSES = ['massing', 'extrude', 'turn', 'stamp'];
 // Extrusion parameters: the profile is drawn in `profileView` and swept along
 // that view's normal axis (front => Z, top => Y, side => X). `draft` tapers the
 // section from the negative-axis end toward the positive end (degrees; the
 // molding/pattern draft designers expect). `twist` rotates the section linearly
 // along the sweep (total degrees end-to-end).
-const DEFAULT_PROCESS_PARAMS = { profileView: 'front', draft: 0, twist: 0 };
+// Stamping parameters: the sketched form acts as the DIE; the part becomes a
+// constant-`thickness` skin formed over it (deep-draw / thermoform), with one
+// `openFace` of the box left open so the shell is a tray/enclosure rather than
+// a sealed hollow ('none' keeps it closed).
+const DEFAULT_PROCESS_PARAMS = { profileView: 'front', draft: 0, twist: 0, thickness: 3, openFace: 'ny' };
+export const OPEN_FACES = ['none', 'py', 'ny', 'px', 'nx', 'pz', 'nz'];
 export const SNAP_STEP = 20; // mm — duplicate offset / one nudge
 
 let nextLayerId = 1;
@@ -451,6 +456,8 @@ function normalizeProcessParams(pp) {
   if (['top', 'front', 'side'].includes(pp?.profileView)) out.profileView = pp.profileView;
   if (isFinite(pp?.draft)) out.draft = Math.max(-30, Math.min(30, +pp.draft));
   if (isFinite(pp?.twist)) out.twist = Math.max(-360, Math.min(360, +pp.twist));
+  if (isFinite(pp?.thickness)) out.thickness = Math.max(0.5, Math.min(20, +pp.thickness));
+  if (OPEN_FACES.includes(pp?.openFace)) out.openFace = pp.openFace;
   return out;
 }
 

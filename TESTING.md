@@ -95,6 +95,19 @@ on a box with a cut hole through it):
 - [x] No console errors through all of the above.
 - [ ] Undercut bake cost on very dense parts (export-res meshes) — watch for hitching.
 
+## Phase 9 — Stamp / deep-draw generator ✅
+
+Automated coverage: stamp block in `tests/processes.test.mjs` (hollow center,
+skin straddles the die surface, open face peels the panel, sealed variant).
+Manual checks (scripted Chromium):
+
+- [x] **Stamp** process turns the sketched form into a constant-thickness skin; the open-face picker flips which side peels (tray ↓, cup ↑, sealed hollow).
+- [x] Sheet-thickness slider re-forms the shell live.
+- [x] Cross-check with the molding **Thickness** analyzer: an 8 mm stamped skin reads ~5–11 mm (green), vs 40–240 mm for the solid die.
+- [x] Undo across process switches; no console errors.
+- [x] The single-file preview build (all libs inlined) boots with **zero external requests**, and still meshes when `Worker` is unavailable (main-thread fallback).
+- [ ] STL export of a stamped shell is watertight at export resolution.
+
 ---
 
 ## Performance targets

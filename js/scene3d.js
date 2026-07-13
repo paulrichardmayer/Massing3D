@@ -220,6 +220,8 @@ function partDescriptor(layer, res) {
       view: pp.profileView ?? 'front',
       draftTan: Math.tan((pp.draft ?? 0) * DEG),
       twistRad: (pp.twist ?? 0) * DEG,
+      thickness: pp.thickness ?? 3,
+      openFace: pp.openFace ?? 'ny',
     },
     views: mmViews(layer),
     res,
@@ -251,13 +253,23 @@ function solidDescriptorWithCuts(layer, res) {
 // one arrives.
 
 let meshWorker = null;
+let workerBroken = false; // strict CSP / file:// — fall back to main-thread meshing
 let jobSeq = 0;
 let busyJob = null;
 const jobQueue = [];
 
 function ensureWorker() {
-  if (meshWorker) return meshWorker;
-  meshWorker = new Worker(new URL('./sdfworker.js', import.meta.url), { type: 'module' });
+  if (meshWorker || workerBroken) return meshWorker;
+  try {
+    // single-file preview builds inject a blob URL for the bundled worker
+    const src = (typeof window !== 'undefined' && window.MASSING3D_WORKER_URL)
+      || new URL('./sdfworker.js', import.meta.url);
+    meshWorker = new Worker(src, { type: 'module' });
+  } catch (err) {
+    console.warn('Mesh worker unavailable — meshing on the main thread', err);
+    workerBroken = true;
+    return null;
+  }
   meshWorker.onmessage = (e) => {
     const { id, positions, normals, indices, error } = e.data;
     const job = busyJob;
@@ -268,7 +280,14 @@ function ensureWorker() {
     }
     pumpJobs();
   };
-  meshWorker.onerror = (e) => { console.warn('SDF worker crashed:', e.message); busyJob = null; };
+  meshWorker.onerror = (e) => {
+    console.warn('SDF worker failed — meshing on the main thread', e.message ?? e);
+    workerBroken = true;
+    try { meshWorker.terminate(); } catch { /* already gone */ }
+    meshWorker = null;
+    if (busyJob) { jobQueue.unshift(busyJob); busyJob = null; }
+    pumpJobs();
+  };
   return meshWorker;
 }
 
@@ -284,6 +303,17 @@ function enqueueSmooth(layer) {
 function pumpJobs() {
   if (busyJob || !jobQueue.length) return;
   ensureWorker();
+  if (workerBroken) {
+    // synchronous fallback: brief hitch per part, but everything still works
+    while (jobQueue.length) {
+      const job = jobQueue.shift();
+      try {
+        const m = meshPart(job.desc);
+        applySmoothResult(job.layerId, m.positions, m.normals, m.indices);
+      } catch (err) { console.warn('main-thread meshing failed', err); }
+    }
+    return;
+  }
   busyJob = jobQueue.shift();
   meshWorker.postMessage({ id: busyJob.id, desc: busyJob.desc });
 }
