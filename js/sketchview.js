@@ -21,7 +21,7 @@ import {
   DRAFT_TOOLS, draftPointerDown, draftPointerMove, draftCommitOpen,
   draftCancel, drawDraftLayer, draftSelectDown, draftDragMove, draftDragEnd,
   draftNumericKey, draftDeleteSelected, draftMirrorSelected,
-  draftAdjustFillet, draftToggleChamfer, draftPromoteSelected,
+  draftAdjustFillet, draftToggleChamfer, draftPromoteSelected, snapDraftPoint,
 } from './draft.js';
 
 // Per-view axis mapping. h/v are the planar coordinates stored in paths.
@@ -124,6 +124,16 @@ export class SketchView {
     };
   }
 
+  // The drawings are live reference in BOTH modes: shape tools snap their
+  // corners to drafted endpoints / midpoints / intersections, so a massing
+  // rect lands exactly on the technical drawing underneath it.
+  snapToDrawings(w) {
+    if (!state.drawings[this.name].length) { this.draftHover = null; return w; }
+    const sp = snapDraftPoint(this, w);
+    this.draftHover = sp.label ? sp : null;
+    return { h: sp.x, v: sp.y };
+  }
+
   // Planar center & half-extents of a layer's box in this view.
   boxPlanar(layer) {
     return {
@@ -162,7 +172,10 @@ export class SketchView {
       }
       if (this.pendingRect) {
         this.commitPendingRect();
-        return;
+        // with a shape tool the same press ALSO starts the next shape — else
+        // rapid rect-after-rect eats every second one. A no-move click still
+        // dies in finishShapeDrag's sub-4px guard.
+        if (state.tool !== 'rect' && state.tool !== 'ellipse') return;
       }
 
       const tool = state.tool;
@@ -184,7 +197,7 @@ export class SketchView {
       if (drawTool && !state.draftMode && al && wrongViewToast(al, this.name)) return;
       if (tool === 'rect' || tool === 'ellipse') {
         if (!state.draftMode && !activeLayer()) return;
-        const w = this.s2w(p.x, p.y);
+        const w = this.snapToDrawings(this.s2w(p.x, p.y));
         this.shapeDrag = { tool, start: { h: w.h, v: w.v }, curr: { h: w.h, v: w.v }, shift: e.shiftKey };
         c.setPointerCapture(e.pointerId);
       } else if (tool === 'nav') {
@@ -227,7 +240,7 @@ export class SketchView {
         return;
       }
       if (this.shapeDrag) {
-        const w = this.s2w(p.x, p.y);
+        const w = this.snapToDrawings(this.s2w(p.x, p.y));
         this.shapeDrag.curr = { h: w.h, v: w.v };
         this.shapeDrag.shift = e.shiftKey;
         this.draw();
@@ -408,6 +421,7 @@ export class SketchView {
   finishShapeDrag() {
     const drag = this.shapeDrag;
     this.shapeDrag = null;
+    this.draftHover = null;
     const layer = activeLayer();
     if (!layer && !state.draftMode) { this.draw(); return; }
     const b = this.shapeDragBounds(drag);

@@ -187,9 +187,12 @@ export function orbitCameraBy(dx, dy) {
 // Fly the camera to a canonical elevation (matching the app's ortho views:
 // front looks along -Z from +Z, side looks along +X from -X, top from above).
 const SNAP_ANGLES = {
-  top: { phi: 0.05, theta: null },   // keep the current heading, go overhead
+  top: { phi: 0.05, theta: null },            // keep the heading, go overhead
+  bottom: { phi: Math.PI - 0.05, theta: null }, // ...or underneath
   front: { phi: Math.PI / 2, theta: 0 },
+  back: { phi: Math.PI / 2, theta: Math.PI },
   side: { phi: Math.PI / 2, theta: -Math.PI / 2 },
+  left: { phi: Math.PI / 2, theta: Math.PI / 2 },
 };
 let snapAnim = null;
 

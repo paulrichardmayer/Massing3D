@@ -46,32 +46,40 @@
 
     <!-- ============ Top-Center menu ============ -->
     <div id="menu-top" class="floating-menu fixed top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-2 py-1.5">
-      <div class="flex items-center gap-2 pr-2 mr-1 border-r border-zinc-700">
+      <button id="logo-menu-btn" class="flex items-center gap-2 pr-2 mr-1 border-r border-zinc-700 cursor-pointer" data-tip="File — New, Open, Save, and exports">
         <svg class="w-5 h-5 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
           <path d="M12 2 3 7v10l9 5 9-5V7l-9-5Z"/><path d="M3 7l9 5 9-5M12 12v10"/>
         </svg>
         <span class="font-semibold tracking-tight text-sm text-zinc-100">Massing3D</span>
-      </div>
-      <button id="btn-new" class="menu-btn" data-tip="New File — clear everything">
+        <svg class="w-3 h-3 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div id="file-menu" class="hidden absolute top-full left-2 mt-2 floating-menu !rounded-xl p-1.5 flex-col gap-0.5 w-44">
+      <button id="btn-new" class="menu-btn w-full !justify-start" data-tip="New File — clear everything">
         <svg viewBox="0 0 24 24"><path d="M13 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9l-6-6Z"/><path d="M13 3v6h6"/></svg>
         <span>New</span>
       </button>
-      <button id="btn-save" class="menu-btn" data-tip="Save project as .json">
+      <button id="btn-save" class="menu-btn w-full !justify-start" data-tip="Save project as .json">
         <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
         <span>Save</span>
       </button>
-      <button id="btn-open" class="menu-btn" data-tip="Open a saved .json project">
+      <button id="btn-open" class="menu-btn w-full !justify-start" data-tip="Open a saved .json project">
         <svg viewBox="0 0 24 24"><path d="M3 7v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-8L9 4H5a2 2 0 0 0-2 2Z"/></svg>
         <span>Open</span>
       </button>
-      <button id="btn-export-obj" class="menu-btn" data-tip="Export mesh as OBJ">
+        <div class="h-px bg-zinc-800 my-0.5"></div>
+      <button id="btn-export-obj" class="menu-btn w-full !justify-start" data-tip="Export mesh as OBJ">
         <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-        <span>OBJ</span>
+        <span>Export OBJ</span>
       </button>
-      <button id="btn-export-stl" class="menu-btn" data-tip="Export mesh as STL">
+      <button id="btn-export-stl" class="menu-btn w-full !justify-start" data-tip="Export mesh as STL">
         <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-        <span>STL</span>
+        <span>Export STL</span>
       </button>
+      <button id="btn-export-dxf" class="menu-btn w-full !justify-start" data-tip="Export the drafting layer as DXF (one layer per view) for CNC / laser vendors">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <span>Export DXF</span>
+      </button>
+      </div>
       <button id="btn-share" class="menu-btn" data-tip="Copy a shareable link (sketches & boxes; underlay images not included)">
         <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>
         <span>Share</span>
@@ -87,10 +95,6 @@
       <button id="btn-cutlist" class="menu-btn" data-tip="Cut list — every visible solid part as L × W × T with quantities, ready for the shop">
         <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>
         <span>Cut List</span>
-      </button>
-      <button id="btn-export-dxf" class="menu-btn" data-tip="Export the drafting layer as DXF (one layer per view) for CNC / laser vendors">
-        <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-        <span>DXF</span>
       </button>
     </div>
 
@@ -325,11 +329,14 @@
 
     <!-- ============ Nav cube: the view toggles ARE the space they control ============ -->
     <div id="nav-cube-wrap" class="fixed bottom-16 left-1/2 -translate-x-1/2 z-40 flex items-end gap-2.5">
-      <div class="nav-cube-scene" data-tip="Views — click a face to toggle its pane. Lit face = visible pane.">
+      <div class="nav-cube-scene" data-tip="Views — click a face to toggle its pane (lit = visible) · drag to orbit · double-click a face to fly the camera there">
         <div class="nav-cube">
-          <button class="cube-face cube-top view-toggle active" data-viewtoggle="top">T</button>
-          <button class="cube-face cube-front view-toggle active" data-viewtoggle="front">F</button>
-          <button class="cube-face cube-side view-toggle active" data-viewtoggle="side">S</button>
+          <button class="cube-face cube-top view-toggle active" data-viewtoggle="top" data-snap="top">T</button>
+          <button class="cube-face cube-bottom cube-opposite view-toggle active" data-viewtoggle="top" data-snap="bottom">–T</button>
+          <button class="cube-face cube-front view-toggle active" data-viewtoggle="front" data-snap="front">F</button>
+          <button class="cube-face cube-back cube-opposite view-toggle active" data-viewtoggle="front" data-snap="back">–F</button>
+          <button class="cube-face cube-side view-toggle active" data-viewtoggle="side" data-snap="side">S</button>
+          <button class="cube-face cube-left cube-opposite view-toggle active" data-viewtoggle="side" data-snap="left">–S</button>
         </div>
       </div>
       <button class="nav-cube-3d view-toggle active" data-viewtoggle="persp" data-tip="Toggle the Perspective pane">3D</button>

@@ -306,7 +306,14 @@ export function addPartFromRegion(view, polyPts, { thickness = 18 } = {}) {
   const cx = (minX + maxX) / 2, cv = (minY + maxY) / 2;
 
   const before = cloneLayers(), ba = state.activeLayerId;
-  const layer = createLayer();
+  // a pristine default part (nothing sketched, plain massing) is noise once
+  // the user drafts first — the first promotion BECOMES it instead of
+  // spawning a second box beside it
+  const only = state.layers.length === 1 ? state.layers[0] : null;
+  const pristine = only && only.process === 'massing'
+    && !only.paths.top.length && !only.paths.front.length && !only.paths.side.length;
+  const layer = pristine ? only : createLayer();
+  if (pristine) state.activeLayerId = layer.id;
   const [hDim, vDim, tDim, hAxis, vAxis, nAxis] = REGION_AXES[view];
   layer.name = `Panel ${layer.id}`;
   layer.box = { w: 0, h: 0, d: 0 };

@@ -492,3 +492,22 @@ body.draft-mode .massing-only {
 #layer-chips .chip-more {
   flex: none;
 }
+
+/* the settings scroller has the same tooltip disease as the rows list:
+   overflow-y:auto forces overflow-x to compute 'auto', and idle tooltip
+   boxes (opacity 0 but still laid out) summon a permanent horizontal bar.
+   Anchor tooltips to the panel and clamp the axis outright. */
+#part-settings {
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+#part-settings [data-tip] {
+  position: static;
+}
+
+/* all six cube faces — the cube reads as a solid object from every angle */
+.cube-bottom { transform: rotateX(-90deg) translateZ(22px); }
+.cube-back   { transform: rotateY(180deg) translateZ(22px); }
+.cube-left   { transform: rotateY(-90deg) translateZ(22px); }
+.cube-opposite { color: #52525b; }
+.cube-opposite.active { color: #38bdf8; }

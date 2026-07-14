@@ -460,7 +460,10 @@ export function drawDraftLayer(view, ctx) {
     }
     ctx.restore();
   }
-  if (!state.draftMode) return;
+  if (!state.draftMode) {
+    drawSnapMarker(view, ctx); // massing shape tools snap to drawings too
+    return;
+  }
 
   const op = view.draftOp;
   if (op) {
@@ -490,7 +493,13 @@ export function drawDraftLayer(view, ctx) {
     ctx.restore();
   }
 
-  // snap marker + label
+  drawSnapMarker(view, ctx);
+}
+
+// Snap marker + label — also shown in Quick Massing when a shape tool snaps
+// to drafted geometry (the drawings are live reference, not wallpaper).
+export function drawSnapMarker(view, ctx) {
+  const op = view.draftOp;
   const hov = op?.hover ?? view.draftHover;
   if (hov?.label) {
     const s = view.w2s(hov.x, hov.y);

@@ -466,6 +466,9 @@ function bindSidePanel() {
     if (!state.draftMode) return;
     promoteFocusedSelection(+$('#panel-preset').value || 18);
   });
+  // picking a preset must not swallow the P hotkey — selects keep focus after
+  // change, and global hotkeys correctly ignore keys typed into form fields
+  $('#panel-preset').addEventListener('change', (e) => e.target.blur());
 
   $('#stamp-openface').addEventListener('change', (e) => {
     const layer = activeLayer();
@@ -790,7 +793,7 @@ function bindNavCube() {
 
   scene.addEventListener('dblclick', (e) => {
     const face = e.target.closest('.cube-face');
-    if (face) snapCameraTo(face.dataset.viewtoggle);
+    if (face) snapCameraTo(face.dataset.snap);
   });
 }
 
@@ -815,14 +818,31 @@ export function initUI() {
     layoutDocked();
   });
 
-  // viewport visibility toggles
+  // File menu under the logo: New / Open / Save + exports
+  const fileMenu = $('#file-menu');
+  const setFileMenu = (open) => {
+    fileMenu.classList.toggle('hidden', !open);
+    fileMenu.classList.toggle('flex', open);
+  };
+  $('#logo-menu-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    setFileMenu(fileMenu.classList.contains('hidden'));
+  });
+  fileMenu.addEventListener('click', () => setFileMenu(false)); // any item closes it
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('#file-menu') && !e.target.closest('#logo-menu-btn')) setFileMenu(false);
+  });
+
+  // viewport visibility toggles — opposite cube faces share a pane, so sync
+  // the lit state across every control bound to that view
   $$('.view-toggle').forEach((b) => b.addEventListener('click', () => {
     const view = b.dataset.viewtoggle;
     // never allow hiding every view
     const visibleCount = Object.values(state.visibleViews).filter(Boolean).length;
     if (state.visibleViews[view] && visibleCount === 1) return;
     state.visibleViews[view] = !state.visibleViews[view];
-    b.classList.toggle('active', state.visibleViews[view]);
+    $$(`.view-toggle[data-viewtoggle="${view}"]`)
+      .forEach((x) => x.classList.toggle('active', state.visibleViews[view]));
     applyLayout();
   }));
 

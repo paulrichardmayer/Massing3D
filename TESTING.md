@@ -162,6 +162,22 @@ entities/layers/flags). Manual checks (scripted Chromium):
 - [x] No console errors.
 - [ ] Open the exported DXF in a real CAD package (LibreCAD/Rhino) — visual spot-check.
 
+## Phase 14 — Workflow shakedown: modeling a real stool ✅
+
+A stool was modeled END-TO-END through the UI in a scripted browser (plan
+drafted in Top view → seat + 4 legs promoted with material presets → legs
+dimensioned to 430 mm → seat drag-snapped onto the leg tops, gap 0.0 mm).
+Bugs found by actually using the tool, all fixed:
+
+- [x] **Rect-after-rect ate every second rectangle** (the pending-commit click swallowed the next drag's start). Shape tools now commit AND begin the next shape in one press.
+- [x] **The P hotkey died after touching the material preset** (focus stayed on the select, which hotkeys rightly ignore). The preset now blurs on change.
+- [x] **First promotion converts a pristine default part** instead of leaving a zombie box beside your drawing.
+- [x] **Massing shape tools snap to drafted geometry** (endpoint/mid/intersection, with the marker) — drawings are reference, not wallpaper.
+- [x] Settings-section horizontal scrollbar removed (same tooltip-layout disease as the rows list; `overflow-y:auto` forces `overflow-x:auto` per spec).
+- [x] Nav cube: all **six faces** (−T/−F/−S dimmed), usable from every angle — orbit, then click/double-click what you see; paired faces light together.
+- [x] File menu under the logo: New / Save / Open / Export OBJ / STL / DXF; closes on item click and outside click.
+- [ ] Known friction (Phase 9 candidates): numeric part position/size entry in the inspector; choosing the promotion plane (e.g. legs drawn in front view placed at chosen depths); drag-snap of parts to DRAFTED lines.
+
 ---
 
 ## Performance targets
