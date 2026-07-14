@@ -143,8 +143,10 @@ Added by the studio (field-relevant, cheap on this architecture):
   + drawing entity model (v7) + Line / Polyline / Arc / Circle / open Curve
   tools + endpoint/mid/grid snaps + ortho lock. Deliverable: draw a credible
   furniture elevation in a view.
-- **Phase 6 — Precision pass.** Numeric entry mid-tool, snap readout,
-  intersection snaps, entity move/delete, mirror, corner fillet + chamfer.
+- **Phase 6 — Precision pass.** SHIPPED 2026-07-14: numeric entry mid-tool,
+  intersection snaps, entity select/move/delete, mirror copy, non-destructive
+  corner fillet + chamfer on polylines; plus free-floating dockable panels.
+  (Deferred within phase: numeric ANGLE entry, offset, trim/extend.)
 - **Phase 7 — The bridge + panels.** "Make Part from region" into any
   process; **Panel promotion with thickness + material presets**; **edge
   round/chamfer on panel/extrusion caps**; chamfer variant of the Blend

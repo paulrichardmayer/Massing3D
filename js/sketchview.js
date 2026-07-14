@@ -19,7 +19,9 @@ import { getProjection } from './scene3d.js';
 import { showToast } from './toast.js';
 import {
   DRAFT_TOOLS, draftPointerDown, draftPointerMove, draftCommitOpen,
-  draftCancel, drawDraftLayer,
+  draftCancel, drawDraftLayer, draftSelectDown, draftDragMove, draftDragEnd,
+  draftNumericKey, draftDeleteSelected, draftMirrorSelected,
+  draftAdjustFillet, draftToggleChamfer,
 } from './draft.js';
 
 // Per-view axis mapping. h/v are the planar coordinates stored in paths.
@@ -189,6 +191,11 @@ export class SketchView {
         this.panState = { x: p.x, y: p.y };
         c.setPointerCapture(e.pointerId);
       } else if (tool === 'select') {
+        // draft mode: pick / drag drawing entities first; miss = part drag
+        if (state.draftMode && draftSelectDown(this, p)) {
+          c.setPointerCapture(e.pointerId);
+          return;
+        }
         this.beginLayerDrag(p, e);
       } else if (tool === 'freehand') {
         if (!state.draftMode && !activeLayer()) return;
@@ -204,6 +211,10 @@ export class SketchView {
       const p = this.localPos(e);
       this.hoverPos = p;
 
+      if (this.draftDrag) {
+        draftDragMove(this, p);
+        return;
+      }
       if (!this.panState && state.draftMode && DRAFT_TOOLS.includes(state.tool)) {
         draftPointerMove(this, p, e);
         return;
@@ -247,6 +258,10 @@ export class SketchView {
     });
 
     const up = (e) => {
+      if (this.draftDrag) {
+        draftDragEnd(this);
+        try { c.releasePointerCapture(e.pointerId); } catch { /* ok */ }
+      }
       if (this.panState) {
         this.panState = null;
         try { c.releasePointerCapture(e.pointerId); } catch { /* ok */ }
@@ -1110,6 +1125,24 @@ export function commitOpenDraftOps() {
   for (const v of Object.values(sketchViews)) {
     if (v.draftOp && draftCommitOpen(v)) return true;
   }
+  return false;
+}
+
+// Draft-mode keyboard routing: typed lengths win, then Enter commits an open
+// op, then selection editing on the last-focused view. Returns true when
+// consumed so main.js skips its own hotkeys.
+export function draftKeydown(e) {
+  if (!state.draftMode) return false;
+  if (draftNumericKey(e, Object.values(sketchViews))) return true;
+  if (e.key === 'Enter') return commitOpenDraftOps();
+  const v = sketchViews[lastFocusedView];
+  if (!v) return false;
+  if (e.key === 'Delete' || e.key === 'Backspace') return draftDeleteSelected(v);
+  const k = e.key.toLowerCase();
+  if (k === 'm') return draftMirrorSelected(v);
+  if (k === 'c') return draftToggleChamfer(v);
+  if (e.key === '[') return draftAdjustFillet(v, -1);
+  if (e.key === ']') return draftAdjustFillet(v, 1);
   return false;
 }
 

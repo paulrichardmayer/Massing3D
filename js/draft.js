@@ -14,8 +14,9 @@
 // This module owns the draft tool state machine per view; sketchview.js
 // delegates pointer/keyboard events here when state.draftMode is on.
 
-import { state, addDrawing } from './state.js';
-import { dist, arcParams, arcPoints, catmullRom } from './geometry.js';
+import { state, addDrawing, recordDrawingsChange, emit } from './state.js';
+import { dist, arcParams, arcPoints, catmullRom, filletPolyline, segIntersect } from './geometry.js';
+import { showToast } from './toast.js';
 
 export const DRAFT_TOOLS = ['line', 'polyline', 'arc', 'circle', 'curve'];
 
@@ -25,7 +26,9 @@ const CLOSE_PX = 12;        // click-the-first-point closure radius
 // ---------------- entity -> renderable polyline(s) ----------------
 
 export function entityPoints(e, seg = 18) {
-  if (e.kind === 'poly') return e.pts;
+  if (e.kind === 'poly') {
+    return e.fillet > 0 ? filletPolyline(e.pts, !!e.closed, e.fillet, !!e.chamfer) : e.pts;
+  }
   if (e.kind === 'curve') return catmullRom(e.pts, e.closed, seg);
   if (e.kind === 'arc') {
     const p = arcParams(e.pts[0], e.pts[1], e.pts[2]);
@@ -72,6 +75,32 @@ function snapCandidates(e) {
 // The grid the user SEES (mirrors sketchview.drawGrid's minor step).
 function gridStep(scale) { return scale > 4 ? 5 : scale > 0.8 ? 10 : 100; }
 
+// Intersections of drawing segments near the probe point (label 'int').
+// Only segments whose boxes reach the probe are paired, so this stays cheap.
+function intersectionSnaps(view, w, tol) {
+  const segs = [];
+  for (const e of state.drawings[view.name]) {
+    const pts = entityPoints(e, 10);
+    const n = e.closed ? pts.length : pts.length - 1;
+    for (let i = 0; i < n; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      if (Math.min(a.x, b.x) - tol > w.h || Math.max(a.x, b.x) + tol < w.h) continue;
+      if (Math.min(a.y, b.y) - tol > w.v || Math.max(a.y, b.y) + tol < w.v) continue;
+      segs.push([a, b, e]);
+    }
+    if (segs.length > 400) return []; // pathological density — skip quietly
+  }
+  const out = [];
+  for (let i = 0; i < segs.length; i++) {
+    for (let j = i + 1; j < segs.length; j++) {
+      if (segs[i][2] === segs[j][2]) continue; // same entity: joints, not intersections
+      const p = segIntersect(segs[i][0], segs[i][1], segs[j][0], segs[j][1]);
+      if (p) out.push({ x: p.x, y: p.y, label: 'int' });
+    }
+  }
+  return out;
+}
+
 // Snap a raw world point against drawing geometry, then the grid.
 // Returns { x, y, label } — label null when unsnapped.
 export function snapDraftPoint(view, w) {
@@ -82,6 +111,10 @@ export function snapDraftPoint(view, w) {
       const d = Math.hypot(c.x - w.h, c.y - w.v);
       if (d < bestD) { bestD = d; best = c; }
     }
+  }
+  for (const c of intersectionSnaps(view, w, tol)) {
+    const d = Math.hypot(c.x - w.h, c.y - w.v);
+    if (d < bestD) { bestD = d; best = c; }
   }
   // the in-progress op's own vertices snap too (lets a polyline close cleanly)
   const op = view.draftOp;
@@ -123,39 +156,45 @@ function resolvePoint(view, screenP, e) {
 // ---------------- tool state machine ----------------
 // view.draftOp = { tool, pts: [{x,y}...], hover: {x,y,label} }
 
-export function draftPointerDown(view, screenP, e) {
-  const tool = state.tool;
-  if (!DRAFT_TOOLS.includes(tool)) return false;
-  const pt = resolvePoint(view, screenP, e);
-  let op = view.draftOp;
-
-  if (!op) {
-    view.draftOp = { tool, pts: [{ x: pt.x, y: pt.y }], hover: pt };
-    view.draw();
-    return true;
-  }
-
+// Advance the active op with a resolved point — shared by pointer clicks and
+// numeric (typed-length) placement.
+function placePoint(view, pt) {
+  const op = view.draftOp;
+  const tool = op.tool;
   if (tool === 'line') {
     commitOp(view, { kind: 'poly', pts: [op.pts[0], { x: pt.x, y: pt.y }], closed: false });
-    return true;
+    return;
   }
   if (tool === 'circle') {
     commitOp(view, { kind: 'circle', pts: [op.pts[0], { x: pt.x, y: pt.y }], closed: true });
-    return true;
+    return;
   }
   if (tool === 'arc') {
-    if (op.pts.length === 1) { op.pts.push({ x: pt.x, y: pt.y }); view.draw(); return true; }
+    if (op.pts.length === 1) { op.pts.push({ x: pt.x, y: pt.y }); view.draw(); return; }
     // stored order: start, through, end
     commitOp(view, { kind: 'arc', pts: [op.pts[0], { x: pt.x, y: pt.y }, op.pts[1]], closed: false });
-    return true;
+    return;
   }
   // polyline / curve: close on the first point, else append
   if (op.pts.length >= 2 && dist(op.pts[0], pt) * view.cam.scale < CLOSE_PX) {
     commitOp(view, { kind: tool === 'curve' ? 'curve' : 'poly', pts: op.pts, closed: true });
-    return true;
+    return;
   }
   op.pts.push({ x: pt.x, y: pt.y });
   view.draw();
+}
+
+export function draftPointerDown(view, screenP, e) {
+  const tool = state.tool;
+  if (!DRAFT_TOOLS.includes(tool)) return false;
+  const pt = resolvePoint(view, screenP, e);
+  if (!view.draftOp) {
+    view.draftOp = { tool, pts: [{ x: pt.x, y: pt.y }], hover: pt };
+    view.draw();
+    return true;
+  }
+  numeric = ''; // a click supersedes any half-typed length
+  placePoint(view, pt);
   return true;
 }
 
@@ -178,16 +217,185 @@ export function draftCommitOpen(view) {
 }
 
 export function draftCancel(view) {
-  const had = !!view.draftOp;
+  const had = !!view.draftOp || view.draftSel != null || !!numeric;
   view.draftOp = null;
   view.draftHover = null;
+  view.draftSel = null;
+  numeric = '';
   if (had) view.draw();
   return had;
 }
 
 function commitOp(view, entity) {
   view.draftOp = null;
+  numeric = '';
   addDrawing(view.name, JSON.parse(JSON.stringify(entity)));
+}
+
+// ---------------- numeric entry (type a length mid-tool) ----------------
+// Rhino muscle memory: click a start point, type "450", Enter — the segment
+// is exactly 450 mm along the current (snapped / ortho-locked) direction.
+// For circles the number is the radius.
+
+let numeric = ''; // shared buffer; owned by whichever view has the active op
+
+export function numericBuffer() { return numeric; }
+
+function opView(views) {
+  return views.find((v) => v.draftOp) ?? null;
+}
+
+// Handle a keydown while drafting. Returns true when consumed.
+export function draftNumericKey(e, views) {
+  const view = opView(views);
+  if (!view) return false;
+  const op = view.draftOp;
+  if (/^[0-9.]$/.test(e.key)) {
+    if (op.tool === 'arc') return false; // lengths don't define a 3-pt arc step
+    if (e.key === '.' && numeric.includes('.')) return true;
+    numeric += e.key;
+    view.draw();
+    return true;
+  }
+  if (e.key === 'Backspace' && numeric) {
+    numeric = numeric.slice(0, -1);
+    view.draw();
+    return true;
+  }
+  if (e.key === 'Enter' && numeric) {
+    const value = parseFloat(numeric);
+    numeric = '';
+    if (!isFinite(value) || value <= 0) { view.draw(); return true; }
+    const last = op.pts[op.pts.length - 1];
+    const h = op.hover ?? { x: last.x + 1, y: last.y };
+    let dx = h.x - last.x, dy = h.y - last.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-9) { dx = 1; dy = 0; } else { dx /= len; dy /= len; }
+    placePoint(view, { x: last.x + dx * value, y: last.y + dy * value });
+    return true;
+  }
+  return false;
+}
+
+// ---------------- selection & editing ----------------
+// Select tool in draft mode: click picks the nearest entity (8 px), drag
+// moves it, Delete removes it, M mirrors a copy about the view's vertical
+// axis, [ ] adjust corner fillet radius on polylines, C toggles chamfer.
+
+const PICK_PX = 8;
+
+function hitEntity(view, w) {
+  const tol = PICK_PX / view.cam.scale;
+  let best = -1, bestD = tol;
+  const ents = state.drawings[view.name];
+  for (let i = 0; i < ents.length; i++) {
+    const pts = entityPoints(ents[i], 10);
+    const n = ents[i].closed ? pts.length : pts.length - 1;
+    for (let s = 0; s < n; s++) {
+      const a = pts[s], b = pts[(s + 1) % pts.length];
+      const d = distToSeg(w, a, b);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+  }
+  return best;
+}
+
+function distToSeg(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 > 1e-12 ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+// Select-tool pointerdown. Returns true when it hit (and begins a move drag).
+export function draftSelectDown(view, screenP) {
+  const w0 = view.s2w(screenP.x, screenP.y);
+  const idx = hitEntity(view, { x: w0.h, y: w0.v });
+  view.draftSel = idx >= 0 ? idx : null;
+  if (idx < 0) { view.draw(); return false; }
+  view.draftDrag = {
+    before: JSON.parse(JSON.stringify(state.drawings[view.name])),
+    lastH: w0.h, lastV: w0.v, moved: false,
+  };
+  view.draw();
+  return true;
+}
+
+export function draftDragMove(view, screenP) {
+  const drag = view.draftDrag;
+  if (!drag || view.draftSel == null) return false;
+  const w = view.s2w(screenP.x, screenP.y);
+  const dx = w.h - drag.lastH, dy = w.v - drag.lastV;
+  drag.lastH = w.h; drag.lastV = w.v;
+  if (dx || dy) {
+    drag.moved = true;
+    const e = state.drawings[view.name][view.draftSel];
+    for (const p of e.pts) { p.x += dx; p.y += dy; }
+    view.draw();
+  }
+  return true;
+}
+
+export function draftDragEnd(view) {
+  const drag = view.draftDrag;
+  view.draftDrag = null;
+  if (!drag) return false;
+  if (drag.moved) recordDrawingsChange(view.name, drag.before);
+  return true;
+}
+
+export function draftDeleteSelected(view) {
+  if (view.draftSel == null) return false;
+  const before = JSON.parse(JSON.stringify(state.drawings[view.name]));
+  state.drawings[view.name].splice(view.draftSel, 1);
+  view.draftSel = null;
+  recordDrawingsChange(view.name, before);
+  emit('change');
+  return true;
+}
+
+// Mirrored COPY about the view's vertical axis (x = 0) — instant left/right
+// furniture symmetry. The copy becomes the selection.
+export function draftMirrorSelected(view) {
+  if (view.draftSel == null) return false;
+  const src = state.drawings[view.name][view.draftSel];
+  const copy = JSON.parse(JSON.stringify(src));
+  for (const p of copy.pts) p.x = -p.x;
+  if (copy.kind === 'arc') copy.pts.reverse(); // keep the sweep through-point valid
+  addDrawing(view.name, copy);
+  view.draftSel = state.drawings[view.name].length - 1;
+  showToast('Mirrored copy about the vertical axis');
+  return true;
+}
+
+// [ / ] on a selected polyline: corner radius. C: chamfer <-> round.
+export function draftAdjustFillet(view, dir) {
+  if (view.draftSel == null) return false;
+  const e = state.drawings[view.name][view.draftSel];
+  if (e.kind !== 'poly' || e.pts.length < 3) {
+    showToast('Corner fillets apply to polylines');
+    return true;
+  }
+  const before = JSON.parse(JSON.stringify(state.drawings[view.name]));
+  e.fillet = Math.max(0, (e.fillet || 0) + dir * 2);
+  recordDrawingsChange(view.name, before);
+  showToast(e.fillet > 0 ? `Corner ${e.chamfer ? 'chamfer' : 'fillet'} ${e.fillet} mm` : 'Sharp corners');
+  emit('change');
+  return true;
+}
+
+export function draftToggleChamfer(view) {
+  if (view.draftSel == null) return false;
+  const e = state.drawings[view.name][view.draftSel];
+  if (e.kind !== 'poly') return true;
+  const before = JSON.parse(JSON.stringify(state.drawings[view.name]));
+  e.chamfer = !e.chamfer;
+  if (!e.fillet) e.fillet = 6; // toggling style implies wanting treated corners
+  recordDrawingsChange(view.name, before);
+  showToast(e.chamfer ? 'Chamfered corners' : 'Rounded corners');
+  emit('change');
+  return true;
 }
 
 // ---------------- rendering ----------------
@@ -213,11 +421,23 @@ export function drawDraftLayer(view, ctx) {
   const ents = state.drawings[view.name];
   if (ents.length) {
     ctx.save();
-    ctx.strokeStyle = state.draftMode ? DRAFT_STROKE : DRAFT_STROKE_DIM;
     ctx.lineWidth = 1.5;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    for (const e of ents) strokePts(view, ctx, entityPoints(e), e.closed);
+    for (let i = 0; i < ents.length; i++) {
+      const selected = state.draftMode && view.draftSel === i;
+      ctx.strokeStyle = selected ? '#fbbf24'
+        : state.draftMode ? DRAFT_STROKE : DRAFT_STROKE_DIM;
+      ctx.lineWidth = selected ? 2.2 : 1.5;
+      strokePts(view, ctx, entityPoints(ents[i]), ents[i].closed);
+      if (selected) {
+        ctx.fillStyle = '#fbbf24';
+        for (const p of ents[i].pts) {
+          const s = view.w2s(p.x, p.y);
+          ctx.fillRect(s.x - 2.5, s.y - 2.5, 5, 5);
+        }
+      }
+    }
     ctx.restore();
   }
   if (!state.draftMode) return;
@@ -261,6 +481,23 @@ export function drawDraftLayer(view, ctx) {
     ctx.fillStyle = '#fbbf24';
     ctx.font = '10px sans-serif';
     ctx.fillText(hov.label, s.x + 8, s.y - 8);
+    ctx.restore();
+  }
+
+  // typed-length chip ("450 mm ⏎") beside the cursor
+  if (op && numeric) {
+    const anchor = op.hover ?? op.pts[op.pts.length - 1];
+    const s = view.w2s(anchor.x, anchor.y);
+    const label = `${numeric} mm ⏎`;
+    ctx.save();
+    ctx.font = '11px sans-serif';
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(24, 24, 27, 0.92)';
+    ctx.fillRect(s.x + 12, s.y - 24, tw + 12, 18);
+    ctx.strokeStyle = '#fbbf24';
+    ctx.strokeRect(s.x + 12, s.y - 24, tw + 12, 18);
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillText(label, s.x + 18, s.y - 11);
     ctx.restore();
   }
 }

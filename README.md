@@ -18,6 +18,15 @@ A web-based 3D ideation tool for industrial designers. Draw 2D orthographic sket
   reference layer when you switch back to massing. The mode is sticky per
   project.
 
+  **Precision & editing:** while drawing, **type a length and press Enter**
+  ("click, `450`, Enter" = an exact 450 mm segment along the current
+  direction; for circles the number is the radius). Points also snap to
+  **intersections** of drawn geometry. With the Select tool, click an entity
+  to select it (amber): **drag** moves it, **Delete** removes it, **M** makes
+  a mirrored copy about the vertical axis, **[ ]** grow/shrink a
+  non-destructive **corner fillet** on polylines and **C** switches it to a
+  **chamfer** — the furniture edge treatments, right in the drawing.
+
 ## How it works
 
 - A product is built from **Parts**. Each part is a 3D bounding box with its own sketched silhouettes. New parts spawn **beside** the active one (free placement, not stacked) and can be dragged/snapped against other parts' faces and centerlines with the Select/Move tool.
@@ -58,7 +67,7 @@ The 3D surface is generated as a **signed distance field** and triangulated with
 
 ## Parts
 
-The **Parts** strip docks to the bottom-right corner by default, with the settings panel stacked directly above it. Both are draggable by their grip handles and dock to whichever screen corner you drop them near.
+The **Parts** strip docks to the bottom-right corner by default, with the settings panel stacked directly above it. Every floating panel drags by its grip handle: **drop it anywhere to leave it floating exactly there**, or release near a screen corner to dock it (docked panels stack; floating ones are nudged back on-screen when the window resizes).
 
 Each part chip: **click** to select & open settings · **double-click** to rename · **Alt-click** to isolate/solo (Alt-click again restores) · **drag** to reorder · the **⋯ button** (or right-click) opens part actions: Duplicate, **Mirror duplicate (X)** for instant left/right pairs (speakers, handles, hinges), Make Solid / Make Cut, Rename, Delete. Every structural edit is undoable.
 

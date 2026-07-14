@@ -114,7 +114,7 @@ const box = { hw: 80, hh: 80, hd: 120 };
   check('drivingView: massing -> null', drivingView(state.layers[1]) === null);
 
   const out = serialize();
-  check('serialize: writes v6 + process', out.v === 6 && out.layers[0].process === 'turn');
+  check('serialize: writes current schema + process', out.v === 7 && out.layers[0].process === 'turn');
   deserialize(JSON.parse(JSON.stringify(out))); // v6 round-trip
   check('round-trip: v6 loads clean', state.layers[0].process === 'turn' && state.layers[1].process === 'massing');
 

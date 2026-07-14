@@ -337,6 +337,16 @@ export function addDrawing(view, entity) {
   emit('change');
 }
 
+// Record an undo entry for a drawings mutation that already happened in place
+// (entity move / fillet tweak / delete). `before` is the caller's snapshot.
+export function recordDrawingsChange(view, before) {
+  pushAction({
+    type: 'drawings', view,
+    before: JSON.parse(JSON.stringify(before)),
+    after: JSON.parse(JSON.stringify(state.drawings[view])),
+  });
+}
+
 export function clearDrawings(view) {
   if (!state.drawings[view].length) return;
   const before = JSON.parse(JSON.stringify(state.drawings[view]));
@@ -517,7 +527,10 @@ function normalizeDrawings(drawings) {
       const min = DRAWING_KINDS[e?.kind];
       if (!min || !Array.isArray(e.pts) || e.pts.length < min) continue;
       if (!e.pts.every((p) => isFinite(p?.x) && isFinite(p?.y))) continue;
-      out[view].push({ kind: e.kind, pts: e.pts.map((p) => ({ x: +p.x, y: +p.y })), closed: !!e.closed });
+      const ent = { kind: e.kind, pts: e.pts.map((p) => ({ x: +p.x, y: +p.y })), closed: !!e.closed };
+      if (isFinite(e.fillet) && e.fillet > 0) ent.fillet = +e.fillet;
+      if (e.chamfer) ent.chamfer = true;
+      out[view].push(ent);
     }
   }
   return out;

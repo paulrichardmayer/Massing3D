@@ -233,3 +233,64 @@ export function catmullRom(pts, closed = false, seg = 12) {
   out.push(closed ? { ...out[0] } : { ...pts[n - 1] });
   return out;
 }
+
+// Corner fillet / chamfer on a polyline (Phase 6). Each treated vertex is
+// replaced by a tangent arc of radius r (or the straight chamfer chord).
+// The tangent length is clamped to half of each adjacent segment so corners
+// never overlap; open paths keep their end vertices untouched.
+export function filletPolyline(pts, closed, r, chamfer = false, arcStep = Math.PI / 12) {
+  const n = pts.length;
+  if (r <= 1e-9 || n < 3) return pts.slice();
+  const out = [];
+  const first = closed ? 0 : 1;
+  const last = closed ? n - 1 : n - 2;
+  if (!closed) out.push({ ...pts[0] });
+  for (let i = first; i <= last; i++) {
+    const v = pts[i];
+    const p = pts[(i - 1 + n) % n], q = pts[(i + 1) % n];
+    const l1 = dist(p, v), l2 = dist(v, q);
+    if (l1 < 1e-9 || l2 < 1e-9) { out.push({ ...v }); continue; }
+    const u1 = { x: (p.x - v.x) / l1, y: (p.y - v.y) / l1 }; // v -> prev
+    const u2 = { x: (q.x - v.x) / l2, y: (q.y - v.y) / l2 }; // v -> next
+    const dot = Math.max(-1, Math.min(1, u1.x * u2.x + u1.y * u2.y));
+    const theta = Math.acos(dot); // interior angle at v
+    if (theta < 0.02 || theta > Math.PI - 0.02) { out.push({ ...v }); continue; }
+    // tangent length for radius r, clamped to half of each adjacent segment
+    let t = r / Math.tan(theta / 2);
+    t = Math.min(t, l1 * 0.5, l2 * 0.5);
+    const rEff = t * Math.tan(theta / 2);
+    const A = { x: v.x + u1.x * t, y: v.y + u1.y * t };
+    const B = { x: v.x + u2.x * t, y: v.y + u2.y * t };
+    if (chamfer) { out.push(A, B); continue; }
+    // arc center along the angle bisector
+    const bis = { x: u1.x + u2.x, y: u1.y + u2.y };
+    const bl = Math.hypot(bis.x, bis.y) || 1;
+    const C = {
+      x: v.x + (bis.x / bl) * (rEff / Math.sin(theta / 2)),
+      y: v.y + (bis.y / bl) * (rEff / Math.sin(theta / 2)),
+    };
+    const a0 = Math.atan2(A.y - C.y, A.x - C.x);
+    let a1 = Math.atan2(B.y - C.y, B.x - C.x);
+    let sweep = a1 - a0;
+    while (sweep > Math.PI) sweep -= Math.PI * 2;
+    while (sweep < -Math.PI) sweep += Math.PI * 2;
+    const steps = Math.max(2, Math.ceil(Math.abs(sweep) / arcStep));
+    for (let s = 0; s <= steps; s++) {
+      const a = a0 + sweep * (s / steps);
+      out.push({ x: C.x + Math.cos(a) * rEff, y: C.y + Math.sin(a) * rEff });
+    }
+  }
+  if (!closed) out.push({ ...pts[n - 1] });
+  return out;
+}
+
+// Intersection of segments ab and cd (proper, within both), or null.
+export function segIntersect(a, b, c, d) {
+  const r = { x: b.x - a.x, y: b.y - a.y }, s = { x: d.x - c.x, y: d.y - c.y };
+  const denom = r.x * s.y - r.y * s.x;
+  if (Math.abs(denom) < 1e-12) return null;
+  const t = ((c.x - a.x) * s.y - (c.y - a.y) * s.x) / denom;
+  const u = ((c.x - a.x) * r.y - (c.y - a.y) * r.x) / denom;
+  if (t < -1e-9 || t > 1 + 1e-9 || u < -1e-9 || u > 1 + 1e-9) return null;
+  return { x: a.x + t * r.x, y: a.y + t * r.y };
+}

@@ -122,6 +122,20 @@ checks (scripted Chromium — a side-table elevation drawn in the Front view):
 - [x] No console errors throughout.
 - [ ] Stylus polyline/curve input on an actual tablet.
 
+## Phase 11 — Draft precision pass + free-floating panels ✅
+
+Automated coverage: fillet/chamfer/intersection math in
+`tests/draft.test.mjs` (33 checks). Manual checks (scripted Chromium,
+asserted against real Save downloads):
+
+- [x] **Typed length**: click, type `450`, Enter → the stored segment is 450.000 mm with dy = 0 (direction from the ortho-locked hover).
+- [x] Selection editing: click an entity with Select (amber highlight) → **drag** moves it (single undo step restores exactly), **Delete** removes it, **M** creates a mirrored copy about x = 0.
+- [x] **[ ]** apply a non-destructive corner fillet to a selected polyline (stored as `fillet` on the entity); **C** toggles chamfer — both visible and round-trip through save.
+- [x] Points snap to **intersections** of drawn segments (label `int`).
+- [x] **Panels float freely**: drop the Parts strip mid-screen and it stays exactly there; drop near a corner and it docks flush (12 px margin) and stacks as before.
+- [x] No console errors.
+- [ ] Numeric entry for angles (only lengths ship in this phase).
+
 ---
 
 ## Performance targets

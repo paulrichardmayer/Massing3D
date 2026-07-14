@@ -1,6 +1,6 @@
 // Smoke test for draft mode: geometry helpers, entity flattening, snapping,
 // ortho lock, and v7 serialization round-trip.
-import { circumcircle, arcParams, arcPoints, catmullRom } from '../js/geometry.js';
+import { circumcircle, arcParams, arcPoints, catmullRom, filletPolyline, segIntersect } from '../js/geometry.js';
 import { entityPoints, snapDraftPoint, orthoLock } from '../js/draft.js';
 import { state, addDrawing, undo, redo, serialize, deserialize } from '../js/state.js';
 
@@ -43,6 +43,39 @@ const near = (a, b, tol = 1e-6) => Math.abs(a - b) < tol;
   check('circle entity: radius honored', circle.every((p) => near(Math.hypot(p.x - 5, p.y - 5), 10, 1e-6)));
   const line = entityPoints({ kind: 'poly', pts: [{ x: 0, y: 0 }, { x: 7, y: 7 }], closed: false });
   check('poly entity: passthrough', line.length === 2 && line[1].x === 7);
+}
+
+// ---- corner fillet / chamfer (Phase 6) ----
+{
+  // right angle at (10,0): (0,0) -> (10,0) -> (10,10)
+  const L = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }];
+  const f = filletPolyline(L, false, 3);
+  check('fillet: open ends untouched', f[0].x === 0 && f[f.length - 1].y === 10);
+  check('fillet: corner replaced by an arc', f.length > 4);
+  // every arc point sits radius 3 from the fillet center (7, 3)... center for
+  // a 90-degree corner with r=3 at vertex (10,0) is (7,3)
+  const arcPts = f.slice(1, -1);
+  check('fillet: arc radius 3 about (7,3)', arcPts.every((p) => near(Math.hypot(p.x - 7, p.y - 3), 3, 1e-6)));
+  const c = filletPolyline(L, false, 3, true);
+  check('chamfer: exactly one chord inserted', c.length === 4 && near(c[1].x, 7) && near(c[2].y, 3));
+  // clamp: radius larger than the segments can host never overshoots
+  const big = filletPolyline(L, false, 100);
+  check('fillet: clamped to half-segments', big.every((p) => p.x >= -1e-9 && p.y <= 10 + 1e-9));
+  // closed square: all 4 corners treated
+  const sq = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }];
+  const sqf = filletPolyline(sq, true, 4);
+  check('fillet: closed path treats every corner', sqf.length >= 4 * 3);
+  // entityPoints applies the entity's own fillet
+  const ent = entityPoints({ kind: 'poly', pts: L, closed: false, fillet: 3 });
+  check('entityPoints: honors e.fillet', ent.length === f.length);
+}
+
+// ---- segment intersection (Phase 6) ----
+{
+  const p = segIntersect({ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }, { x: 10, y: 0 });
+  check('segIntersect: X crossing at (5,5)', p && near(p.x, 5) && near(p.y, 5));
+  check('segIntersect: parallel -> null', segIntersect({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 5 }, { x: 10, y: 5 }) === null);
+  check('segIntersect: disjoint -> null', segIntersect({ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 5, y: 0 }, { x: 6, y: 1 }) === null);
 }
 
 // ---- snapping + ortho (mock view) ----
