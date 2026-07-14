@@ -136,6 +136,19 @@ asserted against real Save downloads):
 - [x] No console errors.
 - [ ] Numeric entry for angles (only lengths ship in this phase).
 
+## Phase 12 — The bridge + parts panel UX + nav cube ✅
+
+Automated coverage: edge round/chamfer SDF + `addPartFromRegion` in
+`tests/processes.test.mjs`. Manual checks (scripted Chromium):
+
+- [x] **Make Part (P)**: closed drafted region + "25 mm hardwood" preset → a real part: `process=extrude`, `box.d=25`, profile normalized to the region bbox, positioned where drawn; EXT badge appears in the parts list; open entities are refused with a hint.
+- [x] **Edge treatment**: Round/Chamfer buttons + size slider on extruded parts re-mesh live; save round-trips `edgeStyle`/`edgeSize` (verified `round@8mm`).
+- [x] **Vertical Parts panel**: rows with color, name, CUT/EXT badges; row click activates + opens inline settings; chevron collapses; the panel never outgrows the viewport (inspector scrolls).
+- [x] **Nav cube**: clicking the F face hides the Front pane and unlights the face; clicking again restores; 3D pill toggles perspective.
+- [x] Caught during verification: the parts-panel rework initially left the `<aside>` unclosed, which swallowed the toolbar + nav cube into it (wild positions); also the draft toolbar exceeded the viewport width — fixed by hiding massing-only tools (bezier/wand/auto/symmetry) in draft mode.
+- [x] No console errors.
+- [ ] Cut list from panels (Phase 8).
+
 ---
 
 ## Performance targets

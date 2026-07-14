@@ -6,7 +6,7 @@ import {
   addPart, deletePart, duplicatePart, setPartRole, renamePart, reorderPart,
   setPartSharp, setPartProcess, setProcessParam,
 } from './state.js';
-import { redrawAll, getLastFocusedView, commitAllPendingShapes, interpretFocusedView } from './sketchview.js';
+import { redrawAll, getLastFocusedView, commitAllPendingShapes, interpretFocusedView, promoteFocusedSelection } from './sketchview.js';
 import { refreshPrintUniforms, getPrintStats, refreshMoldUniforms, getMoldStats } from './scene3d.js';
 import { makeDockable, layoutDocked } from './dock.js';
 import { showToast } from './toast.js';
@@ -145,6 +145,21 @@ function renderLayerChips() {
     label.textContent = layer.name;
     chip.appendChild(label);
 
+    // structure at a glance: process badge (when not plain massing) + CUT
+    const process = layer.process ?? 'massing';
+    if (process !== 'massing') {
+      const badge = document.createElement('span');
+      badge.className = 'chip-badge';
+      badge.textContent = { extrude: 'EXT', turn: 'TRN', stamp: 'STM' }[process] ?? '';
+      chip.appendChild(badge);
+    }
+    if (isCut) {
+      const badge = document.createElement('span');
+      badge.className = 'chip-badge chip-badge-cut';
+      badge.textContent = 'CUT';
+      chip.appendChild(badge);
+    }
+
     const eye = document.createElement('button');
     eye.className = 'chip-eye';
     eye.dataset.tip = layer.visible ? 'Hide part' : 'Show part';
@@ -278,16 +293,19 @@ function openPartMenu(id, x, y) {
 
 // ---------------- side contextual panel ----------------
 
+// The inspector is a SECTION of the Parts panel now (one object, one place —
+// see docs/ux-review-parts-panel.md). Open/close expand/collapse it; the
+// parts list itself is always visible.
 export function openSidePanel() {
   const layer = activeLayer();
   if (!layer) return;
-  $('#side-panel').classList.remove('hidden');
+  $('#part-settings').classList.remove('hidden');
   syncSidePanel();
   layoutDocked();
 }
 
 export function closeSidePanel() {
-  $('#side-panel').classList.add('hidden');
+  $('#part-settings').classList.add('hidden');
   layoutDocked();
 }
 
@@ -311,6 +329,9 @@ function syncSidePanel() {
     $('#draft-val').textContent = `${pp.draft ?? 0}°`;
     $('#twist-slider').value = pp.twist ?? 0;
     $('#twist-val').textContent = `${pp.twist ?? 0}°`;
+    $$('.edge-style-btn').forEach((b) => b.classList.toggle('active', b.dataset.edge === (pp.edgeStyle ?? 'none')));
+    $('#edge-size').value = pp.edgeSize ?? 4;
+    $('#edge-size-val').textContent = `${pp.edgeSize ?? 4} mm`;
   }
   const isStamp = process === 'stamp';
   $('#stamp-controls').classList.toggle('hidden', !isStamp);
@@ -425,6 +446,21 @@ function bindSidePanel() {
   bindProcessSlider('#draft-slider', '#draft-val', 'draft', (v) => `${v}°`);
   bindProcessSlider('#twist-slider', '#twist-val', 'twist', (v) => `${v}°`);
   bindProcessSlider('#stamp-thickness', '#stamp-t-val', 'thickness', (v) => `${v} mm`);
+  bindProcessSlider('#edge-size', '#edge-size-val', 'edgeSize', (v) => `${v} mm`);
+
+  $$('.edge-style-btn').forEach((b) => b.addEventListener('click', () => {
+    const layer = activeLayer();
+    if (!layer || layer.process !== 'extrude') return;
+    setProcessParam(layer, 'edgeStyle', b.dataset.edge);
+    touch(layer);
+    syncSidePanel();
+  }));
+
+  // ---- drafting -> parts bridge ----
+  $('#btn-make-part').addEventListener('click', () => {
+    if (!state.draftMode) return;
+    promoteFocusedSelection(+$('#panel-preset').value || 18);
+  });
 
   $('#stamp-openface').addEventListener('change', (e) => {
     const layer = activeLayer();
@@ -707,8 +743,7 @@ export function initUI() {
   // Layer strip docks bottom-right by default; the settings panel shares the
   // corner and stacks directly above it. Both drag by their grips and dock
   // to whichever corner they're dropped near.
-  makeDockable($('#menu-layers'), 'bottom-right', '.drag-grip');
-  makeDockable($('#side-panel'), 'bottom-right', '.drag-grip');
+  makeDockable($('#parts-panel'), 'top-right', '.drag-grip');
   makeDockable($('#print-panel'), 'bottom-left', '.drag-grip');
   makeDockable($('#mold-panel'), 'bottom-left', '.drag-grip');
 

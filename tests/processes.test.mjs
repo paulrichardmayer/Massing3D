@@ -59,6 +59,45 @@ const box = { hw: 80, hh: 80, hd: 120 };
   check('twist: far end tall & narrow', sdf(0, 50, 118) < 0 && sdf(50, 0, 118) > 0);
 }
 
+// ---- 3b. edge treatment on the extrusion caps (Phase 7) ----
+{
+  const mk = (edge, edgeSize) => compilePart({
+    box, k: 0, process: 'extrude',
+    params: { view: 'front', edge, edgeSize }, views: { front: [rect(50, 50)] },
+  });
+  const round = mk('round', 8);
+  check('edge round: cap-perimeter corner cut', round(49.5, 0, 119.5) > 0);
+  check('edge round: wall mid still full-size', round(49.5, 0, 0) < 0);
+  check('edge round: cap center intact', round(0, 0, 119.5) < 0);
+  // the rounded corner passes ~r from both faces: probe the 45-degree point
+  const r = 8, c = Math.SQRT1_2 * r;
+  check('edge round: arc surface at 45 degrees', Math.abs(round(50 - r + c, 0, 120 - r + c)) < 0.8);
+  const cham = mk('chamfer', 8);
+  check('edge chamfer: corner cut', cham(49.5, 0, 119.5) > 0);
+  check('edge chamfer: wall & cap intact', cham(49.5, 0, 0) < 0 && cham(0, 0, 119.5) < 0);
+  // chamfer surface: profile-dist + axis-dist = -c -> e.g. (-4) + (-4) = -8
+  check('edge chamfer: 45-degree plane at the edge', Math.abs(cham(46, 0, 116)) < 0.8);
+}
+
+// ---- 3c. drafting -> parts bridge: addPartFromRegion (Phase 7) ----
+{
+  const { state: st, addPartFromRegion } = await import('../js/state.js');
+  const region = [
+    { x: -50, y: 100 }, { x: 50, y: 100 }, { x: 50, y: 400 }, { x: -50, y: 400 },
+  ];
+  const before = st.layers.length;
+  const panel = addPartFromRegion('front', region, { thickness: 18 });
+  check('promote: part created', st.layers.length === before + 1 && panel.name.startsWith('Panel'));
+  check('promote: box wraps the region + thickness', panel.box.w === 100 && panel.box.h === 300 && panel.box.d === 18);
+  check('promote: positioned at the region center, on-axis', panel.position.x === 0 && panel.position.y === 250 && panel.position.z === 0);
+  check('promote: extrude process w/ the drawing view', panel.process === 'extrude' && panel.processParams.profileView === 'front');
+  const prof = panel.paths.front[0];
+  check('promote: profile normalized to the box', prof.length === 4 && Math.abs(prof[0].x) === 1 && Math.abs(prof[0].y) === 1);
+  // a plan-view (top) panel rests on the ground
+  const flat = addPartFromRegion('top', region, { thickness: 12 });
+  check('promote: plan panels rest on the ground', flat.box.h === 12 && flat.position.y === 6);
+}
+
 // ---- 4. turn (was revolve): side profile lathed around Y ----
 {
   const desc = { box, k: 0, process: 'turn', views: { side: [rect(60, 60)] } };

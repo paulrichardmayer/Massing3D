@@ -21,7 +21,7 @@ import {
   DRAFT_TOOLS, draftPointerDown, draftPointerMove, draftCommitOpen,
   draftCancel, drawDraftLayer, draftSelectDown, draftDragMove, draftDragEnd,
   draftNumericKey, draftDeleteSelected, draftMirrorSelected,
-  draftAdjustFillet, draftToggleChamfer,
+  draftAdjustFillet, draftToggleChamfer, draftPromoteSelected,
 } from './draft.js';
 
 // Per-view axis mapping. h/v are the planar coordinates stored in paths.
@@ -1126,6 +1126,12 @@ export function commitOpenDraftOps() {
     if (v.draftOp && draftCommitOpen(v)) return true;
   }
   return false;
+}
+
+// "Make Part" (button or P): promote the focused view's selected region.
+export function promoteFocusedSelection(thickness) {
+  const v = sketchViews[lastFocusedView];
+  return v ? draftPromoteSelected(v, thickness) : false;
 }
 
 // Draft-mode keyboard routing: typed lengths win, then Enter commits an open

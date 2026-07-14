@@ -222,6 +222,8 @@ function partDescriptor(layer, res) {
       twistRad: (pp.twist ?? 0) * DEG,
       thickness: pp.thickness ?? 3,
       openFace: pp.openFace ?? 'ny',
+      edge: pp.edgeStyle ?? 'none',
+      edgeSize: pp.edgeSize ?? 0,
     },
     views: mmViews(layer),
     res,

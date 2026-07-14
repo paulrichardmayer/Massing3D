@@ -118,6 +118,7 @@ window.addEventListener('keydown', (e) => {
     case 'e': setTool('ellipse'); break;
     case 's': toggleSymmetry(); break;
     case 'q': interpretFocusedView(); break;
+    case 'p': if (state.draftMode) document.getElementById('btn-make-part').click(); break;
     case '[': adjustCornerRadius(-1); break;
     case ']': adjustCornerRadius(1); break;
     case 'escape': {

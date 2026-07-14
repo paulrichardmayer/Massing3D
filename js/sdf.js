@@ -138,6 +138,14 @@ function makeExtrudeSDF(box, k, v, params) {
     ? buildGrid(regions, gHalf || pH, gHalf || pV, gridMargin(k), GRID_RES_2D)
     : null;
 
+  // cap-perimeter edge treatment: 'round' is the classic rounded-extrusion
+  // field (shrink both distances by r, re-inflate — outer dimensions are
+  // preserved); 'chamfer' intersects with the 45° plane in (profile, axis)
+  // distance space. Only the edges furniture cares about (where the side
+  // wall meets the caps) are treated — profile corners stay per the drawing.
+  const edge = params.edge === 'round' || params.edge === 'chamfer' ? params.edge : 'none';
+  const edgeSize = Math.max(0, params.edgeSize || 0);
+
   return function extrudeSDF(x, y, z) {
     let s = sdBox(x, y, z, hw, hh, hd);
     if (!g) return s; // no profile yet: the part is just its box
@@ -155,7 +163,20 @@ function makeExtrudeSDF(box, k, v, params) {
     let d2 = sampleGrid(g, h, vv);
     if (draftTan) d2 += draftTan * (a + hl);
     const slab = Math.abs(a) - hl;
-    return smax(s, d2 > slab ? d2 : slab, k);
+    let e;
+    if (edge === 'round' && edgeSize > 0) {
+      const rr = Math.min(edgeSize, hl * 0.9);
+      const dx = d2 + rr, dy = slab + rr;
+      const ox = dx > 0 ? dx : 0, oy = dy > 0 ? dy : 0;
+      e = Math.min(Math.max(dx, dy), 0) + Math.sqrt(ox * ox + oy * oy) - rr;
+    } else if (edge === 'chamfer' && edgeSize > 0) {
+      e = d2 > slab ? d2 : slab;
+      const ch = (d2 + slab + edgeSize) * 0.70710678;
+      if (ch > e) e = ch;
+    } else {
+      e = d2 > slab ? d2 : slab;
+    }
+    return smax(s, e, k);
   };
 }
 

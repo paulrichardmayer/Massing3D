@@ -14,7 +14,7 @@
 // This module owns the draft tool state machine per view; sketchview.js
 // delegates pointer/keyboard events here when state.draftMode is on.
 
-import { state, addDrawing, recordDrawingsChange, emit } from './state.js';
+import { state, addDrawing, recordDrawingsChange, emit, addPartFromRegion } from './state.js';
 import { dist, arcParams, arcPoints, catmullRom, filletPolyline, segIntersect } from './geometry.js';
 import { showToast } from './toast.js';
 
@@ -382,6 +382,26 @@ export function draftAdjustFillet(view, dir) {
   recordDrawingsChange(view.name, before);
   showToast(e.fillet > 0 ? `Corner ${e.chamfer ? 'chamfer' : 'fillet'} ${e.fillet} mm` : 'Sharp corners');
   emit('change');
+  return true;
+}
+
+// The bridge (Phase 7): promote the selected CLOSED region into a real part —
+// an extrusion whose profile is the drawing and whose depth is the panel
+// thickness. The drawing stays on the board as the source of truth.
+export function draftPromoteSelected(view, thickness) {
+  if (view.draftSel == null) {
+    showToast('Select a closed drawing with the Select tool first');
+    return false;
+  }
+  const e = state.drawings[view.name][view.draftSel];
+  if (!e.closed) {
+    showToast('Only closed regions become parts — close the outline first');
+    return false;
+  }
+  const pts = entityPoints(e, 24);
+  const layer = addPartFromRegion(view.name, pts, { thickness });
+  if (!layer) return false;
+  showToast(`${layer.name} created — ${layer.box[{ front: 'd', top: 'h', side: 'w' }[view.name]]} mm panel from the drawing`);
   return true;
 }
 

@@ -27,6 +27,14 @@ A web-based 3D ideation tool for industrial designers. Draw 2D orthographic sket
   non-destructive **corner fillet** on polylines and **C** switches it to a
   **chamfer** — the furniture edge treatments, right in the drawing.
 
+  **The bridge — Make Part (`P`).** Select a CLOSED region, pick a material
+  preset (18 mm ply, 12 mm MDF, 25 mm hardwood…), press `P`: the drawing
+  becomes a real **panel** — an extrusion whose profile is the region and
+  whose depth is the sheet thickness, placed exactly where you drew it.
+  Extruded parts (panels included) also get a 3D **edge treatment** on their
+  cap perimeters: **Round** or **Chamfer** with a size slider — the
+  table-top edge break, computed in the SDF, preserved dimensions.
+
 ## How it works
 
 - A product is built from **Parts**. Each part is a 3D bounding box with its own sketched silhouettes. New parts spawn **beside** the active one (free placement, not stacked) and can be dragged/snapped against other parts' faces and centerlines with the Select/Move tool.
@@ -55,7 +63,7 @@ The 3D surface is generated as a **signed distance field** and triangulated with
 | Clean Up (wand) | `Q` | Interprets the focused view's freehand profile into crisp lines, true arcs, and equal-radius rounded corners. Press again to toggle back to the raw stroke |
 | Auto Clean-Up | — | Runs Clean Up the moment you finish a stroke. Default: **on** for mouse, **off** for stylus (toggle overrides) |
 | Symmetry | `S` | Mirrors new sketches across the box's vertical centerline |
-| View toggles | — | T / F / S / 3D — remaining viewports adapt to fill the space |
+| Nav cube | — | Bottom-center 3D cube: its **Top / Front / Side faces toggle the view panes** (lit face = visible), the **3D** pill toggles the perspective pane — remaining viewports adapt to fill the space |
 
 ## Navigation
 
@@ -67,7 +75,7 @@ The 3D surface is generated as a **signed distance field** and triangulated with
 
 ## Parts
 
-The **Parts** strip docks to the bottom-right corner by default, with the settings panel stacked directly above it. Every floating panel drags by its grip handle: **drop it anywhere to leave it floating exactly there**, or release near a screen corner to dock it (docked panels stack; floating ones are nudged back on-screen when the window resizes).
+Parts live in a **vertical Parts panel** (top-right by default): one row per part — color swatch, name, a **CUT** badge when it subtracts and a process badge (**EXT / TRN / STM**) when it isn't plain massing — with the selected part's **settings inline beneath the list** (one object, one place; the chevron collapses them). Every floating panel drags by its grip handle: **drop it anywhere to leave it floating exactly there**, or release near a screen corner to dock it (docked panels stack; floating ones are nudged back on-screen when the window resizes). Rationale: `docs/ux-review-parts-panel.md`.
 
 Each part chip: **click** to select & open settings · **double-click** to rename · **Alt-click** to isolate/solo (Alt-click again restores) · **drag** to reorder · the **⋯ button** (or right-click) opens part actions: Duplicate, **Mirror duplicate (X)** for instant left/right pairs (speakers, handles, hinges), Make Solid / Make Cut, Rename, Delete. Every structural edit is undoable.
 

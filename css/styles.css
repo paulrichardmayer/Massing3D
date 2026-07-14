@@ -8,11 +8,8 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
-#side-panel {
+#parts-panel, #print-panel, #mold-panel {
   border-radius: 0.75rem;
-}
-#side-panel:not(.hidden) {
-  display: flex;
 }
 
 .menu-btn {
@@ -305,7 +302,7 @@ input[type="range"] {
 
 /* fullscreen mode: hide menus */
 #app.maximized #menu-top,
-#app.maximized #menu-layers {
+#app.maximized #parts-panel {
   display: none;
 }
 
@@ -346,4 +343,119 @@ body.draft-mode .viewport[data-view='side'] {
 }
 body.draft-mode canvas.sketch-canvas {
   cursor: crosshair;
+}
+
+
+/* ---------------- Parts panel: vertical rows (UX review, Phase 7) ---------------- */
+#layer-chips .layer-chip {
+  display: flex;
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+}
+#layer-chips .chip-label {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#layer-chips .layer-chip.drag-over {
+  box-shadow: 0 -2px 0 0 #38bdf8; /* vertical list: insert marker above */
+}
+.chip-badge {
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+  border: 1px solid rgba(113, 113, 122, 0.6);
+  color: #a1a1aa;
+  flex: none;
+}
+.chip-badge-cut {
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #fca5a5;
+}
+
+/* ---------------- nav cube (view toggles, bottom-center) ---------------- */
+.nav-cube-scene {
+  width: 76px;
+  height: 76px;
+  perspective: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-cube {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  transform-style: preserve-3d;
+  transform: rotateX(-28deg) rotateY(-42deg);
+  transition: transform 0.25s ease;
+}
+.nav-cube-scene:hover .nav-cube {
+  transform: rotateX(-24deg) rotateY(-36deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-cube, .nav-cube-scene:hover .nav-cube { transition: none; }
+}
+.cube-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #71717a;
+  background: rgba(39, 39, 42, 0.92);
+  border: 1px solid #52525b;
+  border-radius: 4px;
+  cursor: pointer;
+  backface-visibility: hidden;
+}
+.cube-face:hover {
+  background: rgba(63, 63, 70, 0.95);
+  color: #d4d4d8;
+}
+.cube-face.active {
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, 0.7);
+  background: rgba(12, 74, 110, 0.55);
+  box-shadow: inset 0 0 10px rgba(56, 189, 248, 0.25);
+}
+.cube-top   { transform: rotateX(90deg) translateZ(22px); }
+.cube-front { transform: translateZ(22px); }
+.cube-side  { transform: rotateY(90deg) translateZ(22px); }
+.nav-cube-3d {
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  margin-bottom: 10px;
+  border-radius: 0.5rem;
+  border: 1px solid #52525b;
+  background: rgba(39, 39, 42, 0.92);
+  color: #71717a;
+  cursor: pointer;
+}
+.nav-cube-3d:hover { color: #d4d4d8; background: rgba(63, 63, 70, 0.95); }
+.nav-cube-3d.active {
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, 0.7);
+  background: rgba(12, 74, 110, 0.55);
+}
+#app.maximized #nav-cube-wrap { display: none; }
+
+/* parts panel never outgrows the viewport — the inspector scrolls instead */
+#parts-panel {
+  max-height: calc(100vh - 24px);
+}
+#part-settings {
+  overflow-y: auto;
+  min-height: 0;
+}
+/* massing-centric tools step aside while drafting (toolbar width budget) */
+body.draft-mode .massing-only {
+  display: none;
 }

@@ -22,8 +22,14 @@ export const PROCESSES = ['massing', 'extrude', 'turn', 'stamp'];
 // constant-`thickness` skin formed over it (deep-draw / thermoform), with one
 // `openFace` of the box left open so the shell is a tray/enclosure rather than
 // a sealed hollow ('none' keeps it closed).
-const DEFAULT_PROCESS_PARAMS = { profileView: 'front', draft: 0, twist: 0, thickness: 3, openFace: 'ny' };
+// Extrusions additionally carry an EDGE treatment for the cap perimeter —
+// round-over or 45° chamfer of `edgeSize` mm (the furniture edge break).
+const DEFAULT_PROCESS_PARAMS = {
+  profileView: 'front', draft: 0, twist: 0, thickness: 3, openFace: 'ny',
+  edgeStyle: 'none', edgeSize: 4,
+};
 export const OPEN_FACES = ['none', 'py', 'ny', 'px', 'nx', 'pz', 'nz'];
+export const EDGE_STYLES = ['none', 'round', 'chamfer'];
 export const SNAP_STEP = 20; // mm — duplicate offset / one nudge
 
 let nextLayerId = 1;
@@ -277,6 +283,51 @@ export function reorderPart(id, toIndex) {
   commitStructural(before, ba);
 }
 
+// ---------------- drafting -> parts bridge (Phase 7) ----------------
+// Promote a closed drafted region into a real part: the region becomes the
+// extrusion profile, the part's box wraps its bbox in-plane, and the box's
+// dimension along the view normal is the panel THICKNESS. Furniture flow:
+// draw the side panel in an elevation, give it 18 mm, it's a board.
+const REGION_AXES = {
+  // view -> [planar-h dim, planar-v dim, thickness dim, h axis, v axis, normal axis]
+  front: ['w', 'h', 'd', 'x', 'y', 'z'],
+  top: ['w', 'd', 'h', 'x', 'z', 'y'],
+  side: ['d', 'h', 'w', 'z', 'y', 'x'],
+};
+
+export function addPartFromRegion(view, polyPts, { thickness = 18 } = {}) {
+  if (!REGION_AXES[view] || !Array.isArray(polyPts) || polyPts.length < 3) return null;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of polyPts) {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  const hw = Math.max(1, (maxX - minX) / 2), hh = Math.max(1, (maxY - minY) / 2);
+  const cx = (minX + maxX) / 2, cv = (minY + maxY) / 2;
+
+  const before = cloneLayers(), ba = state.activeLayerId;
+  const layer = createLayer();
+  const [hDim, vDim, tDim, hAxis, vAxis, nAxis] = REGION_AXES[view];
+  layer.name = `Panel ${layer.id}`;
+  layer.box = { w: 0, h: 0, d: 0 };
+  layer.box[hDim] = hw * 2;
+  layer.box[vDim] = hh * 2;
+  layer.box[tDim] = Math.max(0.5, thickness);
+  layer.position = { x: 0, y: 0, z: 0 };
+  layer.position[hAxis] = +cx.toFixed(4);
+  layer.position[vAxis] = +cv.toFixed(4);
+  // plan-view panels rest on the ground; elevation panels center on the axis
+  layer.position[nAxis] = nAxis === 'y' ? layer.box.h / 2 : 0;
+  layer.process = 'extrude';
+  layer.processParams.profileView = view;
+  layer.paths[view] = [polyPts.map((p) => ({
+    x: +((p.x - cx) / hw).toFixed(5),
+    y: +((p.y - cv) / hh).toFixed(5),
+  }))];
+  commitStructural(before, ba);
+  return layer;
+}
+
 // Drag-move undo: the caller captures the start position, we record the delta as
 // one lightweight action on release (no full snapshot needed for a translate).
 export function recordPartMove(id, beforePos) {
@@ -514,6 +565,8 @@ function normalizeProcessParams(pp) {
   if (isFinite(pp?.twist)) out.twist = Math.max(-360, Math.min(360, +pp.twist));
   if (isFinite(pp?.thickness)) out.thickness = Math.max(0.5, Math.min(20, +pp.thickness));
   if (OPEN_FACES.includes(pp?.openFace)) out.openFace = pp.openFace;
+  if (EDGE_STYLES.includes(pp?.edgeStyle)) out.edgeStyle = pp.edgeStyle;
+  if (isFinite(pp?.edgeSize)) out.edgeSize = Math.max(0, Math.min(30, +pp.edgeSize));
   return out;
 }
 

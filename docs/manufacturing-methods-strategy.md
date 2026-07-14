@@ -147,10 +147,14 @@ Added by the studio (field-relevant, cheap on this architecture):
   intersection snaps, entity select/move/delete, mirror copy, non-destructive
   corner fillet + chamfer on polylines; plus free-floating dockable panels.
   (Deferred within phase: numeric ANGLE entry, offset, trim/extend.)
-- **Phase 7 — The bridge + panels.** "Make Part from region" into any
-  process; **Panel promotion with thickness + material presets**; **edge
-  round/chamfer on panel/extrusion caps**; chamfer variant of the Blend
-  slider; Quick Massing formally becomes a mode.
+- **Phase 7 — The bridge + panels.** SHIPPED 2026-07-14: "Make Part" (P)
+  promotes a closed drafted region into an extruded panel with material
+  presets (ply/MDF/hardwood/acrylic/steel); edge round/chamfer on
+  extrusion/panel caps in the SDF. Shipped alongside: the design-director
+  UX pass (vertical Parts panel with inline inspector + badges — see
+  docs/ux-review-parts-panel.md) and the bottom-center 3D nav cube that
+  replaced the T/F/S/3D buttons. (Deferred: chamfer variant of the Blend
+  slider; promotion into turn/stamp processes.)
 - **Phase 8+ (stretch).** **Cut list**, dimensions/annotations, DXF/SVG
   export of drawings, sweep/loft (drafted rail + profile), bend lines +
   unfold (unblocked by open paths), drawings-in-3D reference, joinery cuts,
