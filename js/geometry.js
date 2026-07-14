@@ -169,3 +169,67 @@ export function pointInRect(p, cx, cy, hw, hh) {
 export function mirrorPathH(points, axisX) {
   return points.map((p) => ({ x: 2 * axisX - p.x, y: p.y })).reverse();
 }
+
+// ---------------- drafting helpers (Phase 5: draft mode) ----------------
+
+// Circumcircle through three points, or null when (near-)collinear.
+export function circumcircle(a, m, b) {
+  const d = 2 * (a.x * (m.y - b.y) + m.x * (b.y - a.y) + b.x * (a.y - m.y));
+  if (Math.abs(d) < 1e-9) return null;
+  const a2 = a.x * a.x + a.y * a.y, m2 = m.x * m.x + m.y * m.y, b2 = b.x * b.x + b.y * b.y;
+  const cx = (a2 * (m.y - b.y) + m2 * (b.y - a.y) + b2 * (a.y - m.y)) / d;
+  const cy = (a2 * (b.x - m.x) + m2 * (a.x - b.x) + b2 * (m.x - a.x)) / d;
+  return { cx, cy, r: Math.hypot(a.x - cx, a.y - cy) };
+}
+
+// Arc through three points (start, through, end) -> center, radius, start/end
+// angles and sweep direction chosen so the arc passes through the middle
+// point. Null when collinear (callers draw a straight segment instead).
+export function arcParams(a, m, b) {
+  const c = circumcircle(a, m, b);
+  if (!c) return null;
+  const a0 = Math.atan2(a.y - c.cy, a.x - c.cx);
+  const a1 = Math.atan2(m.y - c.cy, m.x - c.cx);
+  const a2 = Math.atan2(b.y - c.cy, b.x - c.cx);
+  const TAU = Math.PI * 2;
+  // sweep from a0 to a2 going CCW; does it pass a1?
+  const ccwSweep = (a2 - a0 + TAU) % TAU;
+  const ccwToMid = (a1 - a0 + TAU) % TAU;
+  const ccw = ccwToMid <= ccwSweep;
+  return { cx: c.cx, cy: c.cy, r: c.r, a0, a2, ccw };
+}
+
+// Sample an arcParams result into a polyline (including both endpoints).
+export function arcPoints(p, samples = 24) {
+  const TAU = Math.PI * 2;
+  const sweep = p.ccw ? (p.a2 - p.a0 + TAU) % TAU : -((p.a0 - p.a2 + TAU) % TAU);
+  const out = [];
+  for (let i = 0; i <= samples; i++) {
+    const t = p.a0 + sweep * (i / samples);
+    out.push({ x: p.cx + Math.cos(t) * p.r, y: p.cy + Math.sin(t) * p.r });
+  }
+  return out;
+}
+
+// Catmull-Rom spline through the given points (open or closed), sampled to a
+// polyline. The standard uniform form; endpoints are clamped for open curves.
+export function catmullRom(pts, closed = false, seg = 12) {
+  const n = pts.length;
+  if (n < 2) return pts.slice();
+  if (n === 2 && !closed) return [pts[0], pts[1]];
+  const P = (i) => pts[closed ? ((i % n) + n) % n : Math.max(0, Math.min(n - 1, i))];
+  const out = [];
+  const spans = closed ? n : n - 1;
+  for (let i = 0; i < spans; i++) {
+    const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+    for (let j = 0; j < seg; j++) {
+      const t = j / seg, t2 = t * t, t3 = t2 * t;
+      out.push({
+        x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+        y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+      });
+    }
+  }
+  out.push(closed ? { ...out[0] } : { ...pts[n - 1] });
+  return out;
+}

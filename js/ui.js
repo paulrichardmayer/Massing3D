@@ -60,6 +60,27 @@ export function setTool(tool) {
   });
 }
 
+// Draft mode toggle (Tab). Entering picks the Line tool; leaving returns to
+// freehand. Sticky per project (serialized), synced on load via syncDraftUI.
+export function setDraftMode(on) {
+  if (state.draftMode === !!on) return;
+  commitAllPendingShapes();
+  state.draftMode = !!on;
+  syncDraftUI();
+  setTool(on ? 'line' : 'freehand');
+  showToast(on
+    ? 'Draft mode — 2D drawing board: strokes stay drawings (Tab to leave)'
+    : 'Quick Massing — closed profiles drive the active part again');
+  redrawAll();
+}
+
+export function toggleDraftMode() { setDraftMode(!state.draftMode); }
+
+function syncDraftUI() {
+  document.body.classList.toggle('draft-mode', state.draftMode);
+  $('#toggle-draft').classList.toggle('active', state.draftMode);
+}
+
 export function toggleSymmetry() {
   state.symmetry = !state.symmetry;
   $('#toggle-symmetry').classList.toggle('active', state.symmetry);
@@ -673,9 +694,12 @@ export function initUI() {
   $('#toggle-auto-interpret').addEventListener('click', toggleAutoInterpret);
   $('#toggle-auto-interpret').classList.toggle('active', state.autoInterpret);
 
+  $('#toggle-draft').addEventListener('click', toggleDraftMode);
+
   on('change', () => {
     renderLayerChips();
     syncSidePanel();
+    syncDraftUI(); // project load / New can flip the sticky mode
     redrawAll();
     layoutDocked();
   });

@@ -56,6 +56,17 @@ export const state = {
   //   tMin/tMax— healthy wall-thickness band in mm (thin = short-shot risk,
   //              thick = sink marks)
   mold: { on: false, mode: 'draft', axis: 'y', minDraft: 1, tMin: 1, tMax: 5 },
+  // Draft mode (Part II): ortho views become 2D drawing boards. Strokes land
+  // in `drawings` (below) instead of driving a part's process. Sticky per
+  // project (serialized, v7); Quick Massing (false) is the fresh-file default.
+  draftMode: false,
+  // Per-view 2D drawing entities, world-planar mm — the technical-drawing
+  // layer. Independent of parts; open paths are first-class citizens here.
+  //   { kind: 'poly',   pts: [{x,y}...], closed }   lines & polylines
+  //   { kind: 'curve',  pts: [{x,y}...], closed }   smooth through-points
+  //   { kind: 'arc',    pts: [start, through, end] }
+  //   { kind: 'circle', pts: [center, rim] }
+  drawings: { top: [], front: [], side: [] },
 };
 
 // 'mesh' rebuilds the CSG for one part (+ its dependents); 'meshAll' rebuilds
@@ -314,6 +325,26 @@ export function recordPathsChange(layer, view, before, after) {
   });
 }
 
+// ---------------- draft drawings (undoable) ----------------
+
+export function addDrawing(view, entity) {
+  const before = JSON.parse(JSON.stringify(state.drawings[view]));
+  state.drawings[view].push(entity);
+  pushAction({
+    type: 'drawings', view, before,
+    after: JSON.parse(JSON.stringify(state.drawings[view])),
+  });
+  emit('change');
+}
+
+export function clearDrawings(view) {
+  if (!state.drawings[view].length) return;
+  const before = JSON.parse(JSON.stringify(state.drawings[view]));
+  state.drawings[view] = [];
+  pushAction({ type: 'drawings', view, before, after: [] });
+  emit('change');
+}
+
 export function clearPaths(layer) {
   const before = JSON.parse(JSON.stringify(layer.paths));
   layer.paths = { top: [], front: [], side: [] };
@@ -335,6 +366,11 @@ export function undo() {
   if (!a) return;
   redoStack.push(a);
   if (a.type === 'layers') { restoreLayers(a.before, a.beforeActive); return; }
+  if (a.type === 'drawings') {
+    state.drawings[a.view] = JSON.parse(JSON.stringify(a.before));
+    emit('change');
+    return;
+  }
   const layer = getLayer(a.layerId);
   if (!layer) return;
   if (a.type === 'setViewPaths') {
@@ -352,6 +388,11 @@ export function redo() {
   if (!a) return;
   undoStack.push(a);
   if (a.type === 'layers') { restoreLayers(a.after, a.afterActive); return; }
+  if (a.type === 'drawings') {
+    state.drawings[a.view] = JSON.parse(JSON.stringify(a.after));
+    emit('change');
+    return;
+  }
   const layer = getLayer(a.layerId);
   if (!layer) return;
   if (a.type === 'setViewPaths') {
@@ -368,8 +409,10 @@ export function redo() {
 
 export function serialize({ includeUnderlays = true } = {}) {
   return {
-    v: 6,
+    v: 7,
     units: state.units,
+    draftMode: !!state.draftMode,
+    drawings: JSON.parse(JSON.stringify(state.drawings)),
     activeLayerId: state.activeLayerId,
     layers: state.layers.map((l) => ({
       id: l.id,
@@ -403,6 +446,9 @@ export function serialize({ includeUnderlays = true } = {}) {
 // v5 -> v6: manufacturing processes. The `revolve` flag generalizes into
 // `process` ('massing' | 'extrude' | 'turn') + `processParams` (profileView,
 // draft, twist). Old files: revolve:true => 'turn', otherwise 'massing'.
+// v6 -> v7: draft mode. Adds `draftMode` (sticky per project) and per-view
+// `drawings` (the 2D technical-drawing layer). Purely additive: older files
+// load with empty drawings and Quick Massing.
 const VIEW_HALF_DIMS = { top: ['w', 'd'], front: ['w', 'h'], side: ['d', 'h'] };
 
 // Rename only the auto-generated "Layer N" labels; user-chosen names are kept.
@@ -461,8 +507,24 @@ function normalizeProcessParams(pp) {
   return out;
 }
 
+// Defensive load of the drawings layer: keep only well-formed entities.
+const DRAWING_KINDS = { poly: 2, curve: 2, arc: 3, circle: 2 }; // kind -> min pts
+function normalizeDrawings(drawings) {
+  const out = { top: [], front: [], side: [] };
+  for (const view of ['top', 'front', 'side']) {
+    const ents = Array.isArray(drawings?.[view]) ? drawings[view] : [];
+    for (const e of ents) {
+      const min = DRAWING_KINDS[e?.kind];
+      if (!min || !Array.isArray(e.pts) || e.pts.length < min) continue;
+      if (!e.pts.every((p) => isFinite(p?.x) && isFinite(p?.y))) continue;
+      out[view].push({ kind: e.kind, pts: e.pts.map((p) => ({ x: +p.x, y: +p.y })), closed: !!e.closed });
+    }
+  }
+  return out;
+}
+
 export function deserialize(data) {
-  if (!data || ![1, 2, 3, 4, 5, 6].includes(data.v) || !Array.isArray(data.layers)) throw new Error('Unrecognized project file');
+  if (!data || ![1, 2, 3, 4, 5, 6, 7].includes(data.v) || !Array.isArray(data.layers)) throw new Error('Unrecognized project file');
   state.layers = data.layers.map((l) => ({
     id: l.id,
     name: migrateName(l.name, l.id),
@@ -479,6 +541,8 @@ export function deserialize(data) {
     underlay: l.underlay ?? null,
   }));
   state.units = data.units ?? 'mm';
+  state.draftMode = !!data.draftMode;
+  state.drawings = normalizeDrawings(data.drawings);
   state.activeLayerId = data.activeLayerId ?? (state.layers[0]?.id ?? null);
   nextLayerId = Math.max(0, ...state.layers.map((l) => l.id)) + 1;
   undoStack.length = 0;
@@ -490,6 +554,8 @@ export function deserialize(data) {
 export function resetProject() {
   state.layers = [];
   state.activeLayerId = null;
+  state.draftMode = false;
+  state.drawings = { top: [], front: [], side: [] };
   nextLayerId = 1;
   undoStack.length = 0;
   redoStack.length = 0;

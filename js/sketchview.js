@@ -5,7 +5,7 @@
 
 import {
   state, activeLayer, setViewPaths, recordPathsChange, recordPartMove, touch, emit, on,
-  drivingView,
+  drivingView, addDrawing,
 } from './state.js';
 import {
   dist, simplifyDP, chaikinClosed, flattenBezierPath, pathArea, mirrorPathH,
@@ -17,6 +17,10 @@ import {
 import PolyBool from './vendor/polybool.js';
 import { getProjection } from './scene3d.js';
 import { showToast } from './toast.js';
+import {
+  DRAFT_TOOLS, draftPointerDown, draftPointerMove, draftCommitOpen,
+  draftCancel, drawDraftLayer,
+} from './draft.js';
 
 // Per-view axis mapping. h/v are the planar coordinates stored in paths.
 // vSign: +1 means screen-down increases v, -1 means screen-up increases v.
@@ -160,13 +164,24 @@ export class SketchView {
       }
 
       const tool = state.tool;
+      // Draft mode: click-based drafting tools own the pointer entirely.
+      if (state.draftMode && DRAFT_TOOLS.includes(tool)) {
+        // a stale op from a different tool never mixes into the new one
+        if (this.draftOp && this.draftOp.tool !== tool) this.draftOp = null;
+        draftPointerDown(this, p, e);
+        return;
+      }
+      if (state.draftMode && tool === 'bezier') {
+        showToast('Bezier draws model profiles — use the Curve tool in draft mode');
+        return;
+      }
       // Turn / Extrude parts are defined by ONE view's profile — block (and
-      // hint) drawing in the other views.
+      // hint) drawing in the other views. (Draft-mode strokes are free.)
       const drawTool = tool === 'freehand' || tool === 'bezier' || tool === 'rect' || tool === 'ellipse';
       const al = activeLayer();
-      if (drawTool && al && wrongViewToast(al, this.name)) return;
+      if (drawTool && !state.draftMode && al && wrongViewToast(al, this.name)) return;
       if (tool === 'rect' || tool === 'ellipse') {
-        if (!activeLayer()) return;
+        if (!state.draftMode && !activeLayer()) return;
         const w = this.s2w(p.x, p.y);
         this.shapeDrag = { tool, start: { h: w.h, v: w.v }, curr: { h: w.h, v: w.v }, shift: e.shiftKey };
         c.setPointerCapture(e.pointerId);
@@ -176,7 +191,7 @@ export class SketchView {
       } else if (tool === 'select') {
         this.beginLayerDrag(p, e);
       } else if (tool === 'freehand') {
-        if (!activeLayer()) return;
+        if (!state.draftMode && !activeLayer()) return;
         this.drawing = [p];
         this.drawingPointerType = e.pointerType || 'mouse';
         c.setPointerCapture(e.pointerId);
@@ -189,6 +204,10 @@ export class SketchView {
       const p = this.localPos(e);
       this.hoverPos = p;
 
+      if (!this.panState && state.draftMode && DRAFT_TOOLS.includes(state.tool)) {
+        draftPointerMove(this, p, e);
+        return;
+      }
       if (this.panState) {
         this.cam.h -= (p.x - this.panState.x) / this.cam.scale;
         this.cam.v -= ((p.y - this.panState.y) / this.cam.scale) * this.cfg.vSign;
@@ -257,7 +276,15 @@ export class SketchView {
     // box face with that shape (rect = the face itself, ellipse = inscribed).
     c.addEventListener('dblclick', (e) => {
       const tool = state.tool;
+      // draft polyline / curve: double-click ends the entity OPEN (the second
+      // click of the pair added a duplicate vertex — drop it first)
+      if (state.draftMode && this.draftOp && (tool === 'polyline' || tool === 'curve')) {
+        if (this.draftOp.pts.length > 1) this.draftOp.pts.pop();
+        draftCommitOpen(this);
+        return;
+      }
       if (tool !== 'rect' && tool !== 'ellipse') return;
+      if (state.draftMode) return; // fill-box targets a part's box — massing only
       // the first click of this dblclick just committed a pending rect —
       // don't immediately replace it with a fill-box shape
       if (performance.now() - this.lastPendingCommit < 500) return;
@@ -291,6 +318,20 @@ export class SketchView {
     const pointerType = this.drawingPointerType || 'mouse';
     this.drawing = null;
     if (!raw || raw.length < 8) { this.draw(); return; }
+
+    // draft mode: the stroke is a drawing entity — OPEN unless the ends meet
+    if (state.draftMode) {
+      const pts = simplifyDP(raw, 2.2).map((p) => {
+        const w = this.s2w(p.x, p.y);
+        return { x: w.h, y: w.v };
+      });
+      if (pts.length < 2) { this.draw(); return; }
+      const closed = dist(raw[0], raw[raw.length - 1]) < CLOSE_THRESHOLD_PX * 1.5;
+      if (closed) pts.pop();
+      addDrawing(this.name, { kind: 'poly', pts, closed });
+      return;
+    }
+
     const layer = activeLayer();
     if (!layer) return;
 
@@ -353,18 +394,22 @@ export class SketchView {
     const drag = this.shapeDrag;
     this.shapeDrag = null;
     const layer = activeLayer();
-    if (!layer) { this.draw(); return; }
+    if (!layer && !state.draftMode) { this.draw(); return; }
     const b = this.shapeDragBounds(drag);
     // discard accidental clicks / sub-pixel drags
     if (Math.min(b.hw, b.hh) * 2 * this.cam.scale < 4) { this.draw(); return; }
 
     if (drag.tool === 'ellipse') {
+      if (state.draftMode) {
+        addDrawing(this.name, { kind: 'poly', pts: ellipsePath(b.ch, b.cv, b.hw, b.hh, 64), closed: true });
+        return;
+      }
       this.commitPath(layer, ellipsePath(b.ch, b.cv, b.hw, b.hh, 64));
       return;
     }
     // rect stays pending so the corner radius can be tuned live;
     // the next click (or Enter / tool change) commits it
-    this.pendingRect = { layer, ...b, r: 0 };
+    this.pendingRect = { layer, ...b, r: 0, draft: state.draftMode };
     showToast('Scroll or [ ] to round corners — click to commit');
     this.draw();
   }
@@ -374,7 +419,12 @@ export class SketchView {
     this.pendingRect = null;
     if (!pr) return;
     this.lastPendingCommit = performance.now();
-    this.commitPath(pr.layer, roundedRectPath(pr.ch, pr.cv, pr.hw, pr.hh, pr.r));
+    const path = roundedRectPath(pr.ch, pr.cv, pr.hw, pr.hh, pr.r);
+    if (pr.draft) {
+      addDrawing(this.name, { kind: 'poly', pts: path, closed: true });
+      return;
+    }
+    this.commitPath(pr.layer, path);
   }
 
   // [ / ] keys nudge the pending rect's corner radius.
@@ -439,13 +489,14 @@ export class SketchView {
   }
 
   cancelSketch() {
+    const hadDraft = draftCancel(this);
     const had = this.drawing || this.bezier || this.shapeDrag || this.pendingRect;
     this.drawing = null;
     this.bezier = null;
     this.shapeDrag = null;
     this.pendingRect = null;
     if (had) this.draw();
-    return !!had;
+    return !!had || hadDraft;
   }
 
   // Convert world-planar path to box-normalized coords ([-1,1] per axis),
@@ -729,6 +780,7 @@ export class SketchView {
       this.drawPaths(ctx, layer);
     }
     this.drawSymmetryAxis(ctx, h);
+    drawDraftLayer(this, ctx);
     this.drawInProgress(ctx);
   }
 
@@ -1051,6 +1103,14 @@ export function cancelAllSketches() {
   let any = false;
   for (const v of Object.values(sketchViews)) any = v.cancelSketch() || any;
   return any;
+}
+
+// Enter finishes an open polyline / curve in whichever view holds one.
+export function commitOpenDraftOps() {
+  for (const v of Object.values(sketchViews)) {
+    if (v.draftOp && draftCommitOpen(v)) return true;
+  }
+  return false;
 }
 
 // CSG rebuilds finish after the 'change' redraw — refresh the ghost

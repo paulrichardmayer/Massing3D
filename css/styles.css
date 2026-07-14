@@ -318,3 +318,32 @@ canvas.sketch-canvas.nav-cursor {
 canvas.sketch-canvas.move-cursor {
   cursor: move;
 }
+
+/* ---------------- draft mode (Part II, Phase 5) ---------------- */
+/* Drafting tool buttons appear only while draft mode is on. */
+.draft-only {
+  display: none;
+}
+body.draft-mode .draft-only {
+  display: inline-flex;
+}
+/* Loud mode indicator: amber headers + badge on the drawing-board views. */
+body.draft-mode .viewport[data-view='top'] .vp-header,
+body.draft-mode .viewport[data-view='front'] .vp-header,
+body.draft-mode .viewport[data-view='side'] .vp-header {
+  color: #fbbf24;
+}
+body.draft-mode .viewport[data-view='top'] .vp-header::after,
+body.draft-mode .viewport[data-view='front'] .vp-header::after,
+body.draft-mode .viewport[data-view='side'] .vp-header::after {
+  content: ' · DRAFT';
+  letter-spacing: 0.08em;
+}
+body.draft-mode .viewport[data-view='top'],
+body.draft-mode .viewport[data-view='front'],
+body.draft-mode .viewport[data-view='side'] {
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.28);
+}
+body.draft-mode canvas.sketch-canvas {
+  cursor: crosshair;
+}

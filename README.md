@@ -2,6 +2,22 @@
 
 A web-based 3D ideation tool for industrial designers. Draw 2D orthographic sketches (Top, Front, Side) and Massing3D turns the extruded profiles into smooth 3D volumes via a signed-distance-field pipeline — rapid visualization, fun ideation, and quick mesh export (OBJ/STL). Optimized for both mouse and tablet/stylus (iPad) input.
 
+## Two modes
+
+- **Quick Massing** (default) — what the rest of this README describes: closed
+  sketches instantly become 3D form via the part's manufacturing process.
+- **Draft mode** (`Tab` or the Draft toggle) — the ortho views become 2D
+  drawing boards for **technical drawings** (furniture plans/elevations).
+  Rhino-style tools: **Line** (Shift = exact ortho, 45° steps), **Polyline**
+  (Enter/double-click ends open, click the first point to close), **3-point
+  Arc**, **Circle** (center + radius), and a smooth **Curve** through clicked
+  points — plus Rect/Ellipse/Freehand, which land as drawings here. Points
+  snap to entity **endpoints, midpoints, centers and the grid** with a marker
+  + label at the cursor; open paths are first-class. Drawings never generate
+  solids, save with the project (schema v7), and stay visible as a dimmed
+  reference layer when you switch back to massing. The mode is sticky per
+  project.
+
 ## How it works
 
 - A product is built from **Parts**. Each part is a 3D bounding box with its own sketched silhouettes. New parts spawn **beside** the active one (free placement, not stacked) and can be dragged/snapped against other parts' faces and centerlines with the Select/Move tool.

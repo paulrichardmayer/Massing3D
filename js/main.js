@@ -1,9 +1,9 @@
 // Massing3D bootstrap: viewports, scene, menus, hotkeys.
 
 import { state, createLayer, resetProject, undo, redo, emit, activeLayer } from './state.js';
-import { SketchView, cancelAllSketches, sketchViews, adjustCornerRadius, interpretFocusedView } from './sketchview.js';
+import { SketchView, cancelAllSketches, sketchViews, adjustCornerRadius, interpretFocusedView, commitOpenDraftOps } from './sketchview.js';
 import { initScene } from './scene3d.js';
-import { initUI, setTool, toggleSymmetry, setMaximized, applyLayout, showToast, closeSidePanel } from './ui.js';
+import { initUI, setTool, toggleSymmetry, toggleDraftMode, setMaximized, applyLayout, showToast, closeSidePanel } from './ui.js';
 import { exportOBJ, exportSTL, saveProject, openProject, buildShareLink, loadFromHash } from './export.js';
 
 // ---------------- viewports ----------------
@@ -94,9 +94,19 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (e.key === 'Tab') {
+    e.preventDefault(); // keep focus off the toolbar buttons
+    toggleDraftMode();
+    return;
+  }
+  if (e.key === 'Enter') {
+    if (commitOpenDraftOps()) e.preventDefault();
+    return;
+  }
+
   switch (e.key.toLowerCase()) {
     case 'w': setTool('select'); break;
-    case 'l': setTool('bezier'); break;
+    case 'l': setTool(state.draftMode ? 'line' : 'bezier'); break;
     case 'f': setTool('freehand'); break;
     case 'r': setTool('rect'); break;
     case 'e': setTool('ellipse'); break;

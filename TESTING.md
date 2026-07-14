@@ -108,6 +108,20 @@ Manual checks (scripted Chromium):
 - [x] The single-file preview build (all libs inlined) boots with **zero external requests**, and still meshes when `Worker` is unavailable (main-thread fallback).
 - [ ] STL export of a stamped shell is watertight at export resolution.
 
+## Phase 10 — Draft mode (technical drawings) ✅
+
+Automated coverage: `node tests/draft.test.mjs` (arc/circumcircle/curve math,
+snapping, ortho lock, drawings undo, v7 round-trip, defensive load). Manual
+checks (scripted Chromium — a side-table elevation drawn in the Front view):
+
+- [x] `Tab` toggles Draft mode: amber `· DRAFT` header badge, draft tool buttons appear, crosshair cursor; toggle is sticky per project (saved in the file).
+- [x] All five tools commit correct entities: closed polyline (click-first), open polyline (Enter), 3-point arc, circle, open curve — verified in the saved `.json` (v7).
+- [x] **Shift ortho beats snapping**: a deliberately off-vertical click stores a leg with dx = 0.0000 (regression: grid snap used to bend ortho lines).
+- [x] Esc cancels a half-built polyline without storing anything; Ctrl+Z removes exactly the last entity.
+- [x] Back in Quick Massing: drawings dim to a reference layer and solid workflows (fill-box, processes, analyzers) are unaffected.
+- [x] No console errors throughout.
+- [ ] Stylus polyline/curve input on an actual tablet.
+
 ---
 
 ## Performance targets

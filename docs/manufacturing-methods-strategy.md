@@ -52,9 +52,10 @@ only truth.
   extrude / turn / stamp) exactly as shipped in Phases 0–4. Nothing regresses.
 
 A visible mode toggle (`Tab` or toolbar) switches which world a stroke lands
-in. **Open question for the user: which mode is the default on a fresh file?**
-Recommendation: keep Quick Massing as the fresh-file default (first-minute
-magic intact) and make the mode sticky per project.
+in. **DECIDED (2026-07-14):** Quick Massing is the fresh-file default
+(first-minute magic intact); the mode is sticky per project (serialized).
+"TD" confirmed = **technical drawings** — plans/elevations to real dimensions,
+a required step in furniture design practice.
 
 ## II.3 The bridge: from drafting to solids
 
@@ -86,7 +87,40 @@ Precision — what makes it drafting and not doodling:
 - **Dimension readout** while drawing; later, persistent dimension annotations.
 
 Editing (second wave): move/delete entities, offset, fillet corners (the
-interpret machinery already does tangent fillets), mirror, trim/extend last.
+interpret machinery already does tangent fillets), **chamfer corners** (the
+45° sibling — confirmed wanted), mirror, trim/extend last.
+
+## II.4b Furniture-specific features (added per review, 2026-07-14)
+
+Requested directly:
+- **Panel thickness.** The furniture-native promotion: draw a surface (side
+  panel, seat, shelf) in a view → "give it thickness" → a solid board. Under
+  the hood this is the extrude process with length = board thickness, but the
+  UX is one action with **material presets** (18 mm ply, 12 mm MDF, 25 mm
+  hardwood…). An OPEN drafted polyline + thickness = a bent-sheet strip
+  (laminations, tambours) via the stamp/shell math.
+- **Edge fillet & chamfer.** Selective edge treatment, not the global Blend:
+  a table top gets a round-over or chamfer on its face edges. SDF-feasible
+  version: **edge style (round / chamfer) + size on the extrusion/panel
+  cross-section caps** — the classic rounded/chamfered-extrusion field, which
+  treats exactly the edges furniture cares about (panel perimeters) without
+  needing general edge selection. Plus a cheap global win: a **Chamfer
+  variant of the Blend slider** (chamfer-min instead of quadratic smooth-min)
+  for crisp 45° transitions everywhere.
+
+Added by the studio (field-relevant, cheap on this architecture):
+- **Cut list.** Every panel/part knows its W×H×T and quantity — auto-generate
+  the cut list a furniture maker actually takes to the shop. Near-free from
+  the part model.
+- **Dimensions & annotations** on the drafting layer (already Phase 8 —
+  elevated in priority: TDs without dimensions aren't TDs).
+- **DXF/SVG export of the drafting layer** — hand drawings to CNC/laser
+  vendors; the standard furniture-shop interchange.
+- **Drawings as 3D reference** (stretch): show a view's drafting layer as
+  faint lines on its world plane in the perspective view — elevations wrap
+  the model like a paper mock-up.
+- **Joinery cuts** (stretch): dado/rabbet/groove as parametric Cut parts
+  snapped to panel edges.
 
 ## II.5 Architecture fit
 
@@ -105,16 +139,20 @@ interpret machinery already does tangent fillets), mirror, trim/extend last.
 
 ## II.6 Revised roadmap
 
-- **Phase 5 — Draft mode core.** Mode toggle + drawing entity model (v7) +
-  Line / Polyline / Arc / Circle / open Curve tools + endpoint/mid/grid snaps
-  + ortho lock. Deliverable: draw a credible furniture elevation in a view.
+- **Phase 5 — Draft mode core.** Mode toggle (Quick Massing default, sticky)
+  + drawing entity model (v7) + Line / Polyline / Arc / Circle / open Curve
+  tools + endpoint/mid/grid snaps + ortho lock. Deliverable: draw a credible
+  furniture elevation in a view.
 - **Phase 6 — Precision pass.** Numeric entry mid-tool, snap readout,
-  intersection snaps, entity move/delete, mirror, corner fillet.
-- **Phase 7 — The bridge.** "Make Part from region": closed-loop promotion
-  into any process; Quick Massing formally becomes a mode.
-- **Phase 8+ (stretch, unchanged).** Sweep/loft (now natural: drafted rail +
-  profile), bend lines + unfold (unblocked by open paths!), CNC accessibility,
-  dimensions/annotations, DXF export of the drafting layer, AI spike.
+  intersection snaps, entity move/delete, mirror, corner fillet + chamfer.
+- **Phase 7 — The bridge + panels.** "Make Part from region" into any
+  process; **Panel promotion with thickness + material presets**; **edge
+  round/chamfer on panel/extrusion caps**; chamfer variant of the Blend
+  slider; Quick Massing formally becomes a mode.
+- **Phase 8+ (stretch).** **Cut list**, dimensions/annotations, DXF/SVG
+  export of drawings, sweep/loft (drafted rail + profile), bend lines +
+  unfold (unblocked by open paths), drawings-in-3D reference, joinery cuts,
+  CNC accessibility, AI spike.
 
 Note the compounding: open-path drafting **unblocks the sheet-metal bend-line
 generator** that Phase 4 had to defer, and drafted rails make sweep/loft

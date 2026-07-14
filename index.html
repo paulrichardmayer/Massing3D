@@ -100,6 +100,11 @@
 
     <!-- ============ Bottom-Center creation tools ============ -->
     <div id="menu-bottom" class="floating-menu fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-2 py-1.5">
+      <button id="toggle-draft" class="menu-btn" data-tip="Draft mode (Tab) — the ortho views become 2D drawing boards: lines, curves, arcs with snaps. Strokes stay drawings instead of driving a part. Toggle back for Quick Massing.">
+        <svg viewBox="0 0 24 24"><path d="M3 21 14.5 9.5M13 3l8 8M15 5l-2 2M18 8l-2 2M21 11l-2 2"/><path d="M3 21v-4l4 4H3Z"/></svg>
+        <span class="text-xs">Draft</span>
+      </button>
+      <div class="w-px h-5 bg-zinc-700 mx-0.5"></div>
       <button id="tool-nav" class="menu-btn tool-btn" data-tool="nav" data-tip="Navigate — pan & zoom the view">
         <svg viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
       </button>
@@ -117,6 +122,21 @@
       </button>
       <button id="tool-freehand" class="menu-btn tool-btn" data-tool="freehand" data-tip="Freehand Sketch Tool (F) — draw with mouse or stylus, auto-smoothed">
         <svg viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3Z"/></svg>
+      </button>
+      <button class="menu-btn tool-btn draft-only" data-tool="line" data-tip="Line — click start, click end · Shift = ortho lock (45° steps) · snaps to endpoints, midpoints & grid">
+        <svg viewBox="0 0 24 24"><path d="M4 20 20 4"/><circle cx="4" cy="20" r="1.8"/><circle cx="20" cy="4" r="1.8"/></svg>
+      </button>
+      <button class="menu-btn tool-btn draft-only" data-tool="polyline" data-tip="Polyline — click each vertex · Enter or double-click ends it open · click the first point to close · Shift = ortho">
+        <svg viewBox="0 0 24 24"><path d="M3 20 8 8l6 7 7-13"/><circle cx="3" cy="20" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="14" cy="15" r="1.6"/><circle cx="21" cy="2" r="1.6"/></svg>
+      </button>
+      <button class="menu-btn tool-btn draft-only" data-tool="arc" data-tip="Arc — click start, click end, then click a point the arc passes through">
+        <svg viewBox="0 0 24 24"><path d="M4 19a15 15 0 0 1 16-14"/><circle cx="4" cy="19" r="1.8"/><circle cx="20" cy="5" r="1.8"/></svg>
+      </button>
+      <button class="menu-btn tool-btn draft-only" data-tool="circle" data-tip="Circle — click the center, then click the radius">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 12h8"/><circle cx="12" cy="12" r="1.4"/></svg>
+      </button>
+      <button class="menu-btn tool-btn draft-only" data-tool="curve" data-tip="Curve — click through-points, a smooth curve threads them · Enter/double-click ends open · click the first point to close">
+        <svg viewBox="0 0 24 24"><path d="M3 18c5 3 6-11 11-9 3 1.2 4 5 7 4"/><circle cx="3" cy="18" r="1.6"/><circle cx="21" cy="13" r="1.6"/></svg>
       </button>
       <span class="menu-sep"></span>
       <button id="btn-interpret" class="menu-btn" data-tip="Clean Up (Q) — snap the focused view's freehand profile to crisp lines, arcs & rounded corners · press again to toggle back to the raw stroke">
