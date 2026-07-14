@@ -12,6 +12,124 @@ enclosures); brake-press bend lines + unfold stayed on the stretch list because
 they need open-path sketching, which fights the app's closed-profile model. AI
 spike parked per §5.3. Remaining stretch: sweep/loft, bend lines + unfold, CNC
 accessibility.
+
+**Revision 2 (2026-07-14):** direction expanded per review — see **Part II:
+Drafting-first** below. The instant-extrude behavior becomes one *mode* rather
+than the app's core assumption, and a Rhino-style 2D drafting layer (lines,
+polylines, arcs, circles, open curves, snaps, numeric input) becomes the
+foundation, so technical drawings of furniture can live in the ortho views
+without generating solids.
+
+---
+
+# Part II — Drafting-first revision
+
+## II.1 What changed in the brief
+
+Massing3D was built on one welded assumption: **a closed stroke in a view IS a
+3D solid** (it becomes the part's silhouette and extrudes instantly). That's
+great for fast massing and it's why the tool feels magic in the first minute —
+but it makes the app *unable to simply draw*. There is no line tool, no open
+curve, no way to draft a plan/elevation of a chair with real dimensions,
+because every mark on the canvas is conscripted into solid generation.
+
+The revision: **decouple drawing from solid generation**, the way Rhino does.
+Curves become first-class objects. Solids become something you explicitly
+*make from* curves. The old instant-extrude behavior survives as a mode —
+**Quick Massing** — because it's genuinely valuable; it just stops being the
+only truth.
+
+## II.2 The two modes
+
+- **Draft mode (new).** The ortho views are drawing boards. Line, polyline,
+  arc, circle, rectangle, ellipse, and open freehand/interpreted curves — all
+  storable as OPEN or closed paths, with snaps and numeric input. Nothing
+  becomes 3D unless you say so. This is where furniture technical drawings
+  (plans, elevations, sections) live. Drawings belong to the *view*, not to a
+  part's box.
+- **Model mode (today's behavior, renamed Quick Massing).** A closed profile
+  drawn in a view still instantly drives the active part's process (massing /
+  extrude / turn / stamp) exactly as shipped in Phases 0–4. Nothing regresses.
+
+A visible mode toggle (`Tab` or toolbar) switches which world a stroke lands
+in. **Open question for the user: which mode is the default on a fresh file?**
+Recommendation: keep Quick Massing as the fresh-file default (first-minute
+magic intact) and make the mode sticky per project.
+
+## II.3 The bridge: from drafting to solids
+
+Drafted curves that form a closed loop can be **promoted**: select a region →
+"Make Part from region" → choose the process (extrude / turn / stamp /
+massing silhouette). This turns the drafting layer into the *precise front
+door* to the same SDF pipeline — the furniture plan you drew becomes the seat
+panel you extrude. Loop detection can start naive (a single closed polyline /
+curve) and grow into real region-finding (planar loops from multiple curves)
+later.
+
+## II.4 Rhino-style tool set (scoped)
+
+Creation — the v1 six:
+| Tool | Input pattern (Rhino-familiar) |
+|---|---|
+| Line | click A, click B · Shift = ortho lock |
+| Polyline | click, click, … · Enter/double-click ends open · click first point closes |
+| Arc | 3 points (start, end, through) — the drafting-friendly variant |
+| Circle | center → radius (type a number to set radius exactly) |
+| Curve (control points) | click points, smooth open spline through them · Enter ends |
+| Rect / Ellipse | already shipped — gain the open/draft context for free |
+
+Precision — what makes it drafting and not doodling:
+- **Snaps**: endpoint, midpoint, intersection, grid, and the existing
+  part-face/centerline snaps; a snap readout chip near the cursor.
+- **Ortho lock** (Shift) and **numeric entry**: type a length/angle mid-tool,
+  Rhino-style ("click, type 450, Enter" = 450 mm segment).
+- **Dimension readout** while drawing; later, persistent dimension annotations.
+
+Editing (second wave): move/delete entities, offset, fillet corners (the
+interpret machinery already does tangent fillets), mirror, trim/extend last.
+
+## II.5 Architecture fit
+
+- **New entity model**: `state.drawings[view] = [{ kind, pts/segs, closed,
+  style }]` — per-view 2D entities, open or closed, undoable, serialized as
+  schema v7. Parts and their process profiles are untouched.
+- **sketchview.js** grows a draft-mode input path (tool state machines for
+  line/polyline/arc/curve) and renders the drafting layer under/over the
+  ghost projections. The interpret (clean-up) machinery already stores
+  line+arc seg-paths — the same representation serves drafted entities, so
+  fillet-radius editing and resolution independence carry over.
+- **The SDF pipeline is untouched** until promotion (II.3) hands it a closed
+  region — which is exactly the format it already eats.
+- Existing seg-path + snapping code means the v1 six tools are mostly input
+  UX, not new geometry math.
+
+## II.6 Revised roadmap
+
+- **Phase 5 — Draft mode core.** Mode toggle + drawing entity model (v7) +
+  Line / Polyline / Arc / Circle / open Curve tools + endpoint/mid/grid snaps
+  + ortho lock. Deliverable: draw a credible furniture elevation in a view.
+- **Phase 6 — Precision pass.** Numeric entry mid-tool, snap readout,
+  intersection snaps, entity move/delete, mirror, corner fillet.
+- **Phase 7 — The bridge.** "Make Part from region": closed-loop promotion
+  into any process; Quick Massing formally becomes a mode.
+- **Phase 8+ (stretch, unchanged).** Sweep/loft (now natural: drafted rail +
+  profile), bend lines + unfold (unblocked by open paths!), CNC accessibility,
+  dimensions/annotations, DXF export of the drafting layer, AI spike.
+
+Note the compounding: open-path drafting **unblocks the sheet-metal bend-line
+generator** that Phase 4 had to defer, and drafted rails make sweep/loft
+natural. This revision isn't a detour from manufacturing methods — it feeds
+the two stretch generators that needed it.
+
+## II.7 Risks
+
+- **Mode confusion** — the one UX risk that matters. The toggle must be
+  loud (cursor, canvas tint, or header badge), and a stroke landing in the
+  "wrong" world needs one-keystroke correction (undo + re-mode).
+- **Scope gravity** — Rhino has ~40 curve tools; we ship six plus snaps and
+  stop. Trim/extend/offset only after real drafting use.
+- **Serialization v7** — drawings add a parallel store; migration is additive
+  (old files load with empty drawings), same pattern as v6.
 **Author:** drafted with Claude, 2026-07-09
 
 ---
