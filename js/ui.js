@@ -7,9 +7,14 @@ import {
   setPartSharp, setPartProcess, setProcessParam,
 } from './state.js';
 import { redrawAll, getLastFocusedView, commitAllPendingShapes, interpretFocusedView, promoteFocusedSelection } from './sketchview.js';
-import { refreshPrintUniforms, getPrintStats, refreshMoldUniforms, getMoldStats } from './scene3d.js';
+import {
+  refreshPrintUniforms, getPrintStats, refreshMoldUniforms, getMoldStats,
+  onCameraMove, orbitCameraBy, snapCameraTo,
+} from './scene3d.js';
 import { makeDockable, layoutDocked } from './dock.js';
 import { showToast } from './toast.js';
+import { buildCutList } from './cutlist.js';
+import { exportCutListCSV } from './export.js';
 
 export { showToast };
 
@@ -691,17 +696,123 @@ function bindMoldPanel() {
   syncMoldPanelMode();
 }
 
+// ---------------- cut list modal ----------------
+
+function showCutList() {
+  const rows = buildCutList(state.layers);
+  const wrap = $('#cutlist-rows');
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="text-zinc-500 py-2">No visible solid parts yet.</div>';
+  } else {
+    const cell = 'padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums';
+    wrap.innerHTML = `<table style="width:100%;border-collapse:collapse">
+      <tr class="text-zinc-500" style="text-align:right">
+        <th style="${cell}">Qty</th><th style="${cell}">L</th><th style="${cell}">W</th><th style="${cell}">T</th>
+        <th style="padding:3px 8px;text-align:left">Parts</th></tr>
+      ${rows.map((r) => `<tr style="border-top:1px solid #27272a">
+        <td style="${cell}">${r.qty}</td><td style="${cell}">${r.length}</td>
+        <td style="${cell}">${r.width}</td><td style="${cell}">${r.thickness}</td>
+        <td style="padding:3px 8px;color:#a1a1aa">${r.parts.join(', ')}</td></tr>`).join('')}
+    </table>
+    <div class="text-zinc-600 mt-2">mm · L ≥ W ≥ T per part's bounding box · cuts excluded</div>`;
+  }
+  const modal = $('#cutlist-modal');
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+}
+
+function bindCutList() {
+  const modal = $('#cutlist-modal');
+  const hide = () => { modal.classList.add('hidden'); modal.classList.remove('flex'); };
+  $('#btn-cutlist').addEventListener('click', showCutList);
+  $('#cutlist-close').addEventListener('click', hide);
+  modal.addEventListener('click', (e) => { if (e.target === modal) hide(); });
+  $('#cutlist-csv').addEventListener('click', () => {
+    showToast(exportCutListCSV() ? 'Cut list CSV downloaded' : 'No visible solid parts yet');
+  });
+}
+
+// ---------------- nav cube ----------------
+// Three jobs: MIRROR the perspective camera (the cube always shows how the
+// model is oriented), ORBIT it (drag the cube), and FLY to a face's view
+// (double-click T / F / S). Single click still toggles the pane — a dblclick
+// toggles twice on the way, which nets out to no visibility change.
+
+function bindNavCube() {
+  const cube = $('.nav-cube');
+  const scene = $('.nav-cube-scene');
+  if (!cube || !scene) return;
+
+  const RAD = 180 / Math.PI;
+  onCameraMove((theta, phi) => {
+    const elev = 90 - phi * RAD;
+    cube.style.transform = `rotateX(${(-elev).toFixed(2)}deg) rotateY(${(-theta * RAD).toFixed(2)}deg)`;
+  });
+
+  // drag anywhere on the cube = orbit the perspective camera. The pointer is
+  // captured only AFTER the drag threshold — capturing on pointerdown would
+  // retarget click/dblclick to the wrapper and kill the face buttons.
+  let drag = null;
+  scene.addEventListener('pointerdown', (e) => {
+    drag = { x: e.clientX, y: e.clientY, moved: 0, captured: false };
+  });
+  scene.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.x = e.clientX; drag.y = e.clientY;
+    drag.moved += Math.abs(dx) + Math.abs(dy);
+    if (drag.moved > 4) {
+      if (!drag.captured) {
+        drag.captured = true;
+        try { scene.setPointerCapture(e.pointerId); } catch { /* fine */ }
+      }
+      orbitCameraBy(dx * 1.6, dy * 1.6);
+    }
+  });
+  const dragEnd = (e) => {
+    if (!drag) return;
+    const wasDrag = drag.moved > 4;
+    drag = null;
+    try { scene.releasePointerCapture(e.pointerId); } catch { /* ok */ }
+    if (wasDrag) suppressNextClick = true;
+  };
+  scene.addEventListener('pointerup', dragEnd);
+  scene.addEventListener('pointercancel', dragEnd);
+
+  let suppressNextClick = false;
+  scene.addEventListener('click', (e) => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
+
+  scene.addEventListener('dblclick', (e) => {
+    const face = e.target.closest('.cube-face');
+    if (face) snapCameraTo(face.dataset.viewtoggle);
+  });
+}
+
 // ---------------- init ----------------
 
 export function initUI() {
   bindSidePanel();
   bindPrintPanel();
   bindMoldPanel();
+  bindNavCube();
+  bindCutList();
 
   $('#btn-add-layer').addEventListener('click', () => {
     const layer = addPart();
     openSidePanel();
     showToast(`${layer.name} added`);
+  });
+
+  // collapse the whole Parts panel down to its title bar
+  $('#parts-collapse').addEventListener('click', () => {
+    $('#parts-panel').classList.toggle('panel-collapsed');
+    layoutDocked();
   });
 
   // viewport visibility toggles

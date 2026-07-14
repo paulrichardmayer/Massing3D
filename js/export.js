@@ -4,7 +4,9 @@ import * as THREE from 'three';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { getExportMeshes } from './scene3d.js';
-import { serialize, deserialize } from './state.js';
+import { serialize, deserialize, state } from './state.js';
+import { dxfFromDrawings } from './dxf.js';
+import { buildCutList, cutListCSV } from './cutlist.js';
 
 function download(filename, data, mime) {
   const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
@@ -38,6 +40,21 @@ export function exportSTL() {
   if (!group) return false;
   const buffer = new STLExporter().parse(group, { binary: true });
   download('massing3d.stl', new Blob([buffer], { type: 'application/octet-stream' }));
+  return true;
+}
+
+// DXF of the drafting layer — one DXF layer per view. False when empty.
+export function exportDXF() {
+  const total = state.drawings.top.length + state.drawings.front.length + state.drawings.side.length;
+  if (!total) return false;
+  download('massing3d-drawings.dxf', dxfFromDrawings(state.drawings), 'application/dxf');
+  return true;
+}
+
+export function exportCutListCSV() {
+  const rows = buildCutList(state.layers);
+  if (!rows.length) return false;
+  download('massing3d-cutlist.csv', cutListCSV(rows), 'text/csv');
   return true;
 }
 

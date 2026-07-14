@@ -84,6 +84,30 @@
         <svg viewBox="0 0 24 24"><path d="M4 4h16v7H4z"/><path d="M4 20h16v-7H4z"/><path d="M12 11v2"/></svg>
         <span>Mold</span>
       </button>
+      <button id="btn-cutlist" class="menu-btn" data-tip="Cut list — every visible solid part as L × W × T with quantities, ready for the shop">
+        <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        <span>Cut List</span>
+      </button>
+      <button id="btn-export-dxf" class="menu-btn" data-tip="Export the drafting layer as DXF (one layer per view) for CNC / laser vendors">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <span>DXF</span>
+      </button>
+    </div>
+
+    <!-- ============ Cut list modal ============ -->
+    <div id="cutlist-modal" class="hidden fixed inset-0 z-50 items-center justify-center bg-black/60">
+      <div class="floating-menu !rounded-xl p-4 w-[26rem] max-h-[70vh] flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-zinc-100">Cut List</h3>
+          <button id="cutlist-close" class="menu-btn !px-1.5 !py-1" data-tip="Close">
+            <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div id="cutlist-rows" class="overflow-y-auto text-xs"></div>
+        <div class="flex gap-1.5 pt-1 border-t border-zinc-800">
+          <button id="cutlist-csv" class="menu-btn flex-1 justify-center">Download CSV</button>
+        </div>
+      </div>
     </div>
 
     <!-- ============ Parts panel: vertical list + inline inspector ============ -->
@@ -95,9 +119,14 @@
           </span>
           <span class="text-[10px] uppercase tracking-wider text-zinc-500">Parts</span>
         </div>
-        <button id="btn-add-layer" class="menu-btn !px-2 !py-1" data-tip="Add a part — spawns beside the active one">
-          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-        </button>
+        <div class="flex items-center gap-1">
+          <button id="btn-add-layer" class="menu-btn !px-2 !py-1" data-tip="Add a part — spawns beside the active one">
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <button id="parts-collapse" class="menu-btn !px-1.5 !py-1" data-tip="Collapse / expand the Parts panel">
+            <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+        </div>
       </div>
       <div id="layer-chips" class="flex flex-col gap-1 max-h-[38vh] overflow-y-auto"></div>
 

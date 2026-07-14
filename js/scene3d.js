@@ -62,7 +62,10 @@ export function initScene(containerEl) {
   new ResizeObserver(resize).observe(container);
   resize();
 
-  renderer.setAnimationLoop(() => renderer.render(scene, camera));
+  renderer.setAnimationLoop(() => {
+    notifyCameraMove();
+    renderer.render(scene, camera);
+  });
 
   on('mesh', rebuildAffected);
   on('meshAll', rebuildAllMeshes);
@@ -99,6 +102,7 @@ function setupNavigation() {
       mode = e.altKey ? 'orbit' : null;
     }
     if (mode) {
+      snapAnim = null; // user takes over from any nav-cube fly-to
       lastX = e.clientX; lastY = e.clientY;
       el.setPointerCapture(e.pointerId);
     }
@@ -149,6 +153,72 @@ function dolly(factor) {
   const len = Math.max(10, Math.min(20000, offset.length() * factor));
   offset.setLength(len);
   camera.position.copy(target).add(offset);
+}
+
+// ---------------- nav-cube camera API ----------------
+// The bottom-center nav cube mirrors this camera and drives it: the cube
+// registers a callback for orientation changes, dragging the cube orbits,
+// and double-clicking a face flies the camera to that elevation.
+
+let cameraMoveCb = null;
+const lastCamPos = new THREE.Vector3(NaN, NaN, NaN);
+
+export function onCameraMove(cb) { cameraMoveCb = cb; lastCamPos.set(NaN, NaN, NaN); }
+
+function notifyCameraMove() {
+  if (!cameraMoveCb || camera.position.equals(lastCamPos)) return;
+  lastCamPos.copy(camera.position);
+  spherical.setFromVector3(camera.position.clone().sub(target));
+  cameraMoveCb(spherical.theta, spherical.phi);
+}
+
+export function orbitCameraBy(dx, dy) {
+  snapAnim = null;
+  const offset = camera.position.clone().sub(target);
+  spherical.setFromVector3(offset);
+  spherical.theta -= dx * 0.005;
+  spherical.phi -= dy * 0.005;
+  spherical.phi = Math.max(0.02, Math.min(Math.PI - 0.02, spherical.phi));
+  offset.setFromSpherical(spherical);
+  camera.position.copy(target).add(offset);
+  camera.lookAt(target);
+}
+
+// Fly the camera to a canonical elevation (matching the app's ortho views:
+// front looks along -Z from +Z, side looks along +X from -X, top from above).
+const SNAP_ANGLES = {
+  top: { phi: 0.05, theta: null },   // keep the current heading, go overhead
+  front: { phi: Math.PI / 2, theta: 0 },
+  side: { phi: Math.PI / 2, theta: -Math.PI / 2 },
+};
+let snapAnim = null;
+
+export function snapCameraTo(view) {
+  const tgt = SNAP_ANGLES[view];
+  if (!tgt) return;
+  const offset = camera.position.clone().sub(target);
+  spherical.setFromVector3(offset);
+  const from = { theta: spherical.theta, phi: spherical.phi, r: spherical.radius };
+  let dTheta = tgt.theta == null ? 0 : tgt.theta - from.theta;
+  while (dTheta > Math.PI) dTheta -= Math.PI * 2;
+  while (dTheta < -Math.PI) dTheta += Math.PI * 2;
+  const dPhi = tgt.phi - from.phi;
+  const t0 = performance.now();
+  const DUR = 280;
+  snapAnim = t0;
+  const tick = () => {
+    if (snapAnim !== t0) return; // superseded by a newer snap / user orbit
+    const u = Math.min(1, (performance.now() - t0) / DUR);
+    const e = u * (2 - u); // ease-out
+    spherical.theta = from.theta + dTheta * e;
+    spherical.phi = Math.max(0.02, Math.min(Math.PI - 0.02, from.phi + dPhi * e));
+    spherical.radius = from.r;
+    camera.position.copy(target).add(new THREE.Vector3().setFromSpherical(spherical));
+    camera.lookAt(target);
+    if (u < 1) requestAnimationFrame(tick);
+    else snapAnim = null;
+  };
+  requestAnimationFrame(tick);
 }
 
 // ---------------- mesh generation ----------------

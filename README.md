@@ -63,7 +63,7 @@ The 3D surface is generated as a **signed distance field** and triangulated with
 | Clean Up (wand) | `Q` | Interprets the focused view's freehand profile into crisp lines, true arcs, and equal-radius rounded corners. Press again to toggle back to the raw stroke |
 | Auto Clean-Up | — | Runs Clean Up the moment you finish a stroke. Default: **on** for mouse, **off** for stylus (toggle overrides) |
 | Symmetry | `S` | Mirrors new sketches across the box's vertical centerline |
-| Nav cube | — | Bottom-center 3D cube: its **Top / Front / Side faces toggle the view panes** (lit face = visible), the **3D** pill toggles the perspective pane — remaining viewports adapt to fill the space |
+| Nav cube | — | Bottom-center 3D cube that **mirrors the perspective camera live**. Click a face to toggle its view pane (lit = visible) · **drag the cube to orbit** the perspective camera · **double-click T / F / S to fly the camera** to that elevation · the **3D** pill toggles the perspective pane |
 
 ## Navigation
 
@@ -75,7 +75,7 @@ The 3D surface is generated as a **signed distance field** and triangulated with
 
 ## Parts
 
-Parts live in a **vertical Parts panel** (top-right by default): one row per part — color swatch, name, a **CUT** badge when it subtracts and a process badge (**EXT / TRN / STM**) when it isn't plain massing — with the selected part's **settings inline beneath the list** (one object, one place; the chevron collapses them). Every floating panel drags by its grip handle: **drop it anywhere to leave it floating exactly there**, or release near a screen corner to dock it (docked panels stack; floating ones are nudged back on-screen when the window resizes). Rationale: `docs/ux-review-parts-panel.md`.
+Parts live in a **vertical Parts panel** (top-right by default): one row per part — color swatch, name, a **CUT** badge when it subtracts and a process badge (**EXT / TRN / STM**) when it isn't plain massing — with the selected part's **settings inline beneath the list** (one object, one place; the chevron collapses them — and the header chevron collapses the whole panel to its title bar). Every floating panel drags by its grip handle: **drop it anywhere to leave it floating exactly there**, or release near a screen corner to dock it (docked panels stack; floating ones are nudged back on-screen when the window resizes). Rationale: `docs/ux-review-parts-panel.md`.
 
 Each part chip: **click** to select & open settings · **double-click** to rename · **Alt-click** to isolate/solo (Alt-click again restores) · **drag** to reorder · the **⋯ button** (or right-click) opens part actions: Duplicate, **Mirror duplicate (X)** for instant left/right pairs (speakers, handles, hinges), Make Solid / Make Cut, Rename, Delete. Every structural edit is undoable.
 
@@ -95,6 +95,8 @@ Click a chip to open its panel:
 - **Share** — copies a link with the whole project encoded in the URL (underlay images excluded for size)
 - **Print** — toggles the **3D-print preview** analyzer
 - **Mold** — toggles the **injection-molding preview** analyzer (one analyzer at a time)
+- **Cut List** — every visible solid part as **Qty · L × W × T** (identical sizes grouped), with CSV download — the list a furniture maker takes to the shop
+- **DXF** — exports the drafting layer as DXF R12 (one layer per view, true arcs/circles) for CNC and laser vendors
 
 ## 3D-print preview (analyzer)
 

@@ -4,7 +4,7 @@ import { state, createLayer, resetProject, undo, redo, emit, activeLayer } from 
 import { SketchView, cancelAllSketches, sketchViews, adjustCornerRadius, interpretFocusedView, commitOpenDraftOps, draftKeydown } from './sketchview.js';
 import { initScene } from './scene3d.js';
 import { initUI, setTool, toggleSymmetry, toggleDraftMode, setMaximized, applyLayout, showToast, closeSidePanel } from './ui.js';
-import { exportOBJ, exportSTL, saveProject, openProject, buildShareLink, loadFromHash } from './export.js';
+import { exportOBJ, exportSTL, exportDXF, saveProject, openProject, buildShareLink, loadFromHash } from './export.js';
 
 // ---------------- viewports ----------------
 
@@ -61,6 +61,9 @@ document.getElementById('btn-export-obj').addEventListener('click', () => {
 });
 document.getElementById('btn-export-stl').addEventListener('click', () => {
   showToast(exportSTL() ? 'STL exported' : 'Nothing to export yet — sketch something first');
+});
+document.getElementById('btn-export-dxf').addEventListener('click', () => {
+  showToast(exportDXF() ? 'DXF exported — one layer per view' : 'No drawings yet — draft something first (Tab)');
 });
 
 document.getElementById('btn-share').addEventListener('click', async () => {

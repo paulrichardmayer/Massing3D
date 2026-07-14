@@ -155,10 +155,13 @@ Added by the studio (field-relevant, cheap on this architecture):
   docs/ux-review-parts-panel.md) and the bottom-center 3D nav cube that
   replaced the T/F/S/3D buttons. (Deferred: chamfer variant of the Blend
   slider; promotion into turn/stamp processes.)
-- **Phase 8+ (stretch).** **Cut list**, dimensions/annotations, DXF/SVG
-  export of drawings, sweep/loft (drafted rail + profile), bend lines +
-  unfold (unblocked by open paths), drawings-in-3D reference, joinery cuts,
-  CNC accessibility, AI spike.
+- **Phase 8 (in progress).** SHIPPED 2026-07-14: **cut list** (qty-grouped
+  L×W×T + CSV) and **DXF export** of the drafting layer (R12, per-view
+  layers, true arcs); plus nav-cube camera navigation (live mirror, drag
+  orbit, double-click fly-to) and Parts-panel polish (collapse, scrollbar
+  fix). Remaining stretch: dimensions/annotations, sweep/loft, bend lines +
+  unfold, drawings-in-3D reference, joinery cuts, CNC accessibility, AI
+  spike.
 
 Note the compounding: open-path drafting **unblocks the sheet-metal bend-line
 generator** that Phase 4 had to defer, and drafted rails make sweep/loft

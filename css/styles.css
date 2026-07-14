@@ -354,6 +354,7 @@ body.draft-mode canvas.sketch-canvas {
 }
 #layer-chips .chip-label {
   flex: 1;
+  min-width: 0; /* flex items refuse to shrink below content without this */
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -390,14 +391,11 @@ body.draft-mode canvas.sketch-canvas {
   width: 44px;
   height: 44px;
   transform-style: preserve-3d;
-  transform: rotateX(-28deg) rotateY(-42deg);
-  transition: transform 0.25s ease;
+  transform: rotateX(-28deg) rotateY(-42deg); /* until the camera mirror takes over */
+  cursor: grab;
 }
-.nav-cube-scene:hover .nav-cube {
-  transform: rotateX(-24deg) rotateY(-36deg);
-}
-@media (prefers-reduced-motion: reduce) {
-  .nav-cube, .nav-cube-scene:hover .nav-cube { transition: none; }
+.nav-cube:active {
+  cursor: grabbing;
 }
 .cube-face {
   position: absolute;
@@ -458,4 +456,39 @@ body.draft-mode canvas.sketch-canvas {
 /* massing-centric tools step aside while drafting (toolbar width budget) */
 body.draft-mode .massing-only {
   display: none;
+}
+
+/* rows list: the vertical scrollbar must never force a horizontal one */
+#layer-chips {
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+/* whole-panel collapse: just the title bar remains */
+#parts-panel.panel-collapsed #layer-chips,
+#parts-panel.panel-collapsed #part-settings {
+  display: none;
+}
+#parts-panel.panel-collapsed {
+  gap: 0;
+}
+#parts-collapse svg {
+  transition: transform 0.15s ease;
+}
+#parts-panel.panel-collapsed #parts-collapse svg {
+  transform: rotate(-90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  #parts-collapse svg { transition: none; }
+}
+
+/* inside the scrolling rows list, tooltips must never widen the scroller:
+   anchoring rows position:static makes the panel (outside the scroll
+   container) the tooltips' containing block, so their boxes cannot
+   contribute horizontal overflow — hovered or not */
+#layer-chips [data-tip] {
+  position: static;
+}
+#layer-chips .chip-eye,
+#layer-chips .chip-more {
+  flex: none;
 }

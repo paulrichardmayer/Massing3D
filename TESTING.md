@@ -149,6 +149,19 @@ Automated coverage: edge round/chamfer SDF + `addPartFromRegion` in
 - [x] No console errors.
 - [ ] Cut list from panels (Phase 8).
 
+## Phase 13 — Cut list + DXF + nav-cube navigation + panel polish ✅
+
+Automated coverage: `node tests/phase8.test.mjs` (cut-list grouping/CSV, DXF
+entities/layers/flags). Manual checks (scripted Chromium):
+
+- [x] Parts list has **no horizontal overflow** even with 8 parts + a max-length name (root cause: tooltip pseudo-elements contributed layout width inside the scroller; rows are now position-static so tooltips anchor to the panel).
+- [x] Header chevron **collapses the whole Parts panel** to a 50 px title bar and back.
+- [x] Nav cube **mirrors the camera live**, **drag orbits** (without toggling panes — capture engages only past the drag threshold), **double-click F flies the camera** to exactly the front elevation, and single-click still toggles panes.
+- [x] **Cut List** modal groups 8 identical parts into one Qty-8 row; CSV downloads with the right header and grouping.
+- [x] **DXF** download contains ENTITIES/POLYLINE/CIRCLE on per-view layers and ends with EOF; empty drafting layer refuses with a hint.
+- [x] No console errors.
+- [ ] Open the exported DXF in a real CAD package (LibreCAD/Rhino) — visual spot-check.
+
 ---
 
 ## Performance targets
