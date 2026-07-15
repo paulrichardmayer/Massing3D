@@ -22,7 +22,74 @@ without generating solids.
 
 ---
 
-# Part II — Drafting-first revision
+# Part III — THE RESET: a furniture studio, not a massing tool (2026-07-15)
+
+## III.1 The verdict from use
+
+Review feedback after real use: *"The concepts are all mixed up, the software
+doesn't make sense anymore… The massing idea is a feature, not the software
+itself. I want a simple 3D tool like Spline3D / Womp / Sloyd but for
+furniture — clay modelling like Womp with parametric creation like Sloyd and
+a little Rhino."*
+
+Correct on all counts. The post-mortem in one line: **we kept adding concepts
+(processes, analyzers, draft mode, a bridge, material presets) onto a core
+loop that was never right for the domain.** Massing answers "what does this
+BLOB look like from three sides?" — right for unibody industrial design,
+wrong for furniture, which is an ASSEMBLY of simple parts (boards, rods,
+slabs) in precise, repeated, parametric relationships. Every phase since has
+been a compensation for that mismatch. The stool test quantified it: a disc
+on four legs = 5 promotes + 4 dimension edits + a zoom-dance drag.
+
+## III.2 What we actually own (the reset is not a loss)
+
+- The **SDF engine** (smooth blend, booleans, Surface Nets in a worker,
+  gradient normals) IS a clay engine — Womp's technical core, already built.
+- **Turn** = the round-leg/knob lathe. **Extrude + edge round/chamfer** = the
+  board/profile engine. **Stamp** = shells. These become HOW primitives are
+  made, invisible as concepts.
+- Snapping, numeric entry, fillet/chamfer math, cut list, DXF = the Rhino
+  bit and the shop handoff, all keepable as features.
+
+What dies as a CONCEPT (not as code): modes (draft vs massing), the promote
+bridge, the process picker as a first-class decision, material presets in a
+toolbar, quad-ortho-first layout.
+
+## III.3 The new core loop
+
+1. **One big 3D viewport.** Direct manipulation: click a primitive into the
+   scene, move with a gizmo, snap to ground/faces, type exact dimensions in
+   an always-visible mini bar. Ortho views become an optional layout, not
+   the front door.
+2. **Furniture primitives**: Board (W×H×T), Leg/Rod (round/square, length,
+   taper), Slab, Cylinder. No modes. No promotion.
+3. **Parametric templates (the Sloyd moment)**: Table, Stool, Shelf, Cabinet
+   as slider-driven assemblies (height, overhang, leg count/thickness, shelf
+   count). 30 seconds to a credible idea.
+4. **Clay tools (the Womp moment)**: select parts → MELT them together
+   (inter-part SDF blend — the one real new engine feature this needs;
+   today's blend is per-part), fillet, carve with cut shapes.
+5. **Feature drawers**: sketch-a-custom-profile (old drafting+massing, with
+   auto-chained loop pickup), print/mold analyzers, cut list, DXF export.
+
+## III.4 Reset roadmap (replaces further Part I/II phases)
+
+- **R1 — 3D-first shell.** Single-viewport layout, primitive insertion
+  (Board/Rod/Slab/Cylinder), move gizmo + ground/face snapping, inline
+  numeric dims, duplicate/mirror. Mostly re-shelling existing part machinery.
+- **R2 — Templates.** Table / Stool / Shelf as parametric part-groups with
+  4–6 sliders each.
+- **R3 — Clay.** Inter-part blend groups (union-smooth across selected
+  parts in one field), per-edge fillet via edge treatments, carve.
+- **R4 — Drawers.** Custom profile sketching (with connected-curve auto-join
+  for loops), analyzers, cut list, DXF re-homed as features.
+
+Mechanically this is a re-shell, not a git revert — the engine layers
+(sdf.js, geometry.js, state part model, exporters) carry over intact.
+
+---
+
+# Part II — Drafting-first revision (SUPERSEDED by Part III)
 
 ## II.1 What changed in the brief
 
