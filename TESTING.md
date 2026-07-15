@@ -178,6 +178,21 @@ Bugs found by actually using the tool, all fixed:
 - [x] File menu under the logo: New / Save / Open / Export OBJ / STL / DXF; closes on item click and outside click.
 - [ ] Known friction (Phase 9 candidates): numeric part position/size entry in the inspector; choosing the promotion plane (e.g. legs drawn in front view placed at chosen depths); drag-snap of parts to DRAFTED lines.
 
+## R1 — Furniture Studio reset: 3D-first shell ✅
+
+The Part III re-shell (strategy doc): the 3D perspective view IS the app,
+sketching moves into a Tab drawer. Verified with a scripted-browser build
+of a full table using ONLY 3D clicks and drags:
+
+- [x] Boot: perspective view only, **empty scene** (no default part), sketch tools hidden, five primitive buttons + Clay stub in the toolbar, nav-cube ortho faces unlit.
+- [x] One click on Slab/Board/Leg/Rod/Cyl drops a grounded part; `findFreeSpot` ring-search places each new part clear of existing ones (no stacking surprises off-screen).
+- [x] Click a part in 3D → it becomes the active part (panel row highlights). Occluded parts don't steal the pick.
+- [x] Drag moves on the ground plane with snapping (centers, ±(halfA+halfB) face-to-face adjacency); Shift-drag lifts vertically and snaps to stacked heights: slab landed at y=462.5 **exactly** (leg top 450 + half thickness 12.5); worst leg placement error 0.0 mm.
+- [x] Undo restores a lift (slab back to y=12.5); redo re-applies.
+- [x] **Tab drawer**: opens the ortho drawing boards + sketch tools + Line tool; Tab again **closes the drawer and restores the previous layout** (persp-only, sketch tools hidden).
+- [x] No console errors through the whole drive.
+- [ ] Real-pointer feel pass: drag roughness while the mesh worker is busy; inline numeric dims for part position/size (R2 candidate).
+
 ---
 
 ## Performance targets

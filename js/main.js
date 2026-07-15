@@ -17,9 +17,9 @@ initUI();
 // ---------------- project boot ----------------
 
 if (!loadFromHash()) {
-  createLayer();
+  // Furniture Studio: an empty stage — the primitive bar starts the piece
   emit('change');
-  emit('mesh', activeLayer());
+  emit('meshAll');
 } else {
   showToast('Shared project loaded');
 }

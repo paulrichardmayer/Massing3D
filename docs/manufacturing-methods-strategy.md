@@ -74,11 +74,17 @@ toolbar, quad-ortho-first layout.
 
 ## III.4 Reset roadmap (replaces further Part I/II phases)
 
-- **R1 — 3D-first shell.** Single-viewport layout, primitive insertion
-  (Board/Rod/Slab/Cylinder), move gizmo + ground/face snapping, inline
-  numeric dims, duplicate/mirror. Mostly re-shelling existing part machinery.
-- **R2 — Templates.** Table / Stool / Shelf as parametric part-groups with
-  4–6 sliders each.
+- **R1 — 3D-first shell.** ✅ SHIPPED. Single-viewport boot (perspective
+  only, empty scene), primitive toolbar (Slab/Board/Leg/Rod/Cylinder — one
+  click drops a part on the ground, auto-placed clear of existing parts),
+  direct 3D manipulation (click to select, drag on the ground plane,
+  Shift-drag to lift, snapping to ground / part centers / face-to-face
+  adjacency and stacking), sketch tools gated behind a Tab drawer that
+  opens the ortho drawing boards and restores the 3D layout on close.
+  Verified end-to-end in driven Chromium: a table built purely by 3D
+  drags — slab top-face-snapped onto four legs with 0.0 mm placement error.
+- **R2 — Templates.** Parametric part-groups with 4–6 sliders each.
+  Priority order (per Paul): **Chair, Stool, Sofa, Table, Lamp**.
 - **R3 — Clay.** Inter-part blend groups (union-smooth across selected
   parts in one field), per-edge fillet via edge treatments, carve.
 - **R4 — Drawers.** Custom profile sketching (with connected-curve auto-join

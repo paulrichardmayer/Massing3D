@@ -511,3 +511,16 @@ body.draft-mode .massing-only {
 .cube-left   { transform: rotateY(-90deg) translateZ(22px); }
 .cube-opposite { color: #52525b; }
 .cube-opposite.active { color: #38bdf8; }
+
+/* ---------------- Furniture Studio shell (Part III / R1) ---------------- */
+/* Sketch tools only exist when a drawing board (ortho pane) is on screen. */
+.sketch-only {
+  display: none;
+}
+body.ortho-visible .sketch-only {
+  display: inline-flex;
+}
+/* re-assert: massing-centric tools stay hidden while drafting */
+body.draft-mode .massing-only {
+  display: none;
+}

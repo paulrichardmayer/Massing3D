@@ -5,6 +5,7 @@
 //   'cut'             — subtracted from solids it overlaps (CSG SUBTRACTION)
 
 import { tessellatePath } from './interpret.js';
+import { ellipsePath } from './geometry.js';
 
 const UNIT_FACTORS = { mm: 1, cm: 10, m: 1000 }; // internal unit is mm
 
@@ -37,7 +38,7 @@ let nextLayerId = 1;
 export const state = {
   layers: [],
   activeLayerId: null,
-  tool: 'freehand', // nav | select | bezier | freehand | rect | ellipse
+  tool: 'select', // select is home base in the 3D-first shell
   symmetry: false,
   // Auto-interpret freehand strokes on finish. Default differs by input: ON for
   // mouse, OFF for stylus (a deliberate organic line). Until the user flips the
@@ -45,7 +46,9 @@ export const state = {
   autoInterpret: true,
   autoInterpretUserSet: false,
   units: 'mm',
-  visibleViews: { top: true, front: true, side: true, persp: true },
+  // Furniture Studio (Part III / R1): the 3D viewport IS the app on launch;
+  // ortho drawing boards are opt-in (nav cube faces or the Sketch toggle).
+  visibleViews: { top: false, front: false, side: false, persp: true },
   maximized: null, // view name or null
   // 3D-print preview (analyzer) — a render-layer mode, so like solo/maximize it
   // is view state: not serialized, not undoable.
@@ -175,6 +178,54 @@ function commitStructural(before, beforeActive) {
 export function addPart() {
   const before = cloneLayers(), ba = state.activeLayerId;
   const layer = createLayer();
+  commitStructural(before, ba);
+  return layer;
+}
+
+// ---------------- furniture primitives (Part III / R1) ----------------
+// One click = one part, resting on the ground, sensible furniture defaults.
+// Round parts get a full-box circle profile in the Top view — the massing
+// engine quietly doing cylinder duty (massing is a feature now, not the app).
+const PRIMITIVES = {
+  board: { name: 'Board', box: { w: 400, h: 300, d: 18 } },
+  slab: { name: 'Slab', box: { w: 600, h: 25, d: 400 } },
+  leg: { name: 'Leg', box: { w: 40, h: 450, d: 40 } },
+  roundleg: { name: 'Leg', box: { w: 40, h: 450, d: 40 }, round: true },
+  cylinder: { name: 'Cylinder', box: { w: 150, h: 300, d: 150 }, round: true },
+};
+
+// Nearest free ground spot around the origin — primitives must land IN VIEW,
+// never march off-screen in a row. Free = the XZ footprint clears every
+// existing part's footprint by a small gap.
+function findFreeSpot(box, skipId) {
+  const clear = (x, z) => state.layers.every((l) => {
+    if (l.id === skipId) return true;
+    return Math.abs(x - l.position.x) >= (box.w + l.box.w) / 2 + 10
+      || Math.abs(z - l.position.z) >= (box.d + l.box.d) / 2 + 10;
+  });
+  if (clear(0, 0)) return { x: 0, z: 0 };
+  const step = Math.max(box.w, box.d) / 2 + SNAP_STEP;
+  for (let r = 1; r <= 40; r++) {
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+      const x = dx * r * step, z = dz * r * step;
+      if (clear(x, z)) return { x, z };
+    }
+  }
+  return { x: 0, z: 0 };
+}
+
+export function addPrimitive(kind) {
+  const spec = PRIMITIVES[kind];
+  if (!spec) return null;
+  const before = cloneLayers(), ba = state.activeLayerId;
+  const layer = createLayer();
+  layer.name = `${spec.name} ${layer.id}`;
+  layer.box = { ...spec.box };
+  const spot = findFreeSpot(layer.box, layer.id);
+  layer.position = { x: spot.x, y: layer.box.h / 2, z: spot.z };
+  if (spec.round) {
+    layer.paths.top = [ellipsePath(0, 0, 1, 1, 48).map((p) => ({ x: +p.x.toFixed(5), y: +p.y.toFixed(5) }))];
+  }
   commitStructural(before, ba);
   return layer;
 }
@@ -624,6 +675,7 @@ export function deserialize(data) {
   for (const l of state.layers) emit('mesh', l);
 }
 
+// A fresh scene is EMPTY — the first primitive click starts the piece.
 export function resetProject() {
   state.layers = [];
   state.activeLayerId = null;
@@ -632,7 +684,6 @@ export function resetProject() {
   nextLayerId = 1;
   undoStack.length = 0;
   redoStack.length = 0;
-  createLayer();
   emit('change');
-  emit('mesh', activeLayer());
+  emit('meshAll');
 }

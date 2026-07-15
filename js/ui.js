@@ -3,8 +3,8 @@
 
 import {
   state, on, emit, touch, getLayer, activeLayer, clearPaths, unitFactor,
-  addPart, deletePart, duplicatePart, setPartRole, renamePart, reorderPart,
-  setPartSharp, setPartProcess, setProcessParam,
+  addPart, addPrimitive, deletePart, duplicatePart, setPartRole, renamePart,
+  reorderPart, setPartSharp, setPartProcess, setProcessParam,
 } from './state.js';
 import { redrawAll, getLastFocusedView, commitAllPendingShapes, interpretFocusedView, promoteFocusedSelection } from './sketchview.js';
 import {
@@ -44,6 +44,9 @@ export function applyLayout() {
     }
     rows[rowName].style.display = anyVisible ? '' : 'none';
   }
+  // sketch tools only exist when a drawing board is on screen
+  const anyOrtho = state.visibleViews.top || state.visibleViews.front || state.visibleViews.side;
+  document.body.classList.toggle('ortho-visible', !!anyOrtho);
   // canvases & renderer resize via ResizeObserver; force a redraw after reflow
   requestAnimationFrame(redrawAll);
 }
@@ -67,12 +70,23 @@ export function setTool(tool) {
 
 // Draft mode toggle (Tab). Entering picks the Line tool; leaving returns to
 // freehand. Sticky per project (serialized), synced on load via syncDraftUI.
+let viewsBeforeDraft = null; // drawer semantics: closing restores the layout
 export function setDraftMode(on) {
   if (state.draftMode === !!on) return;
   commitAllPendingShapes();
   state.draftMode = !!on;
+  if (on) {
+    // drafting needs drawing boards: open the ortho panes
+    viewsBeforeDraft = { ...state.visibleViews };
+    for (const v of ['top', 'front', 'side']) state.visibleViews[v] = true;
+  } else if (viewsBeforeDraft) {
+    Object.assign(state.visibleViews, viewsBeforeDraft);
+    viewsBeforeDraft = null;
+  }
+  syncViewToggles();
+  applyLayout();
   syncDraftUI();
-  setTool(on ? 'line' : 'freehand');
+  setTool(on ? 'line' : 'select');
   showToast(on
     ? 'Draft mode — 2D drawing board: strokes stay drawings (Tab to leave)'
     : 'Quick Massing — closed profiles drive the active part again');
@@ -84,6 +98,11 @@ export function toggleDraftMode() { setDraftMode(!state.draftMode); }
 function syncDraftUI() {
   document.body.classList.toggle('draft-mode', state.draftMode);
   $('#toggle-draft').classList.toggle('active', state.draftMode);
+}
+
+// nav-cube faces + 3D pill reflect state.visibleViews (paired faces together)
+function syncViewToggles() {
+  $$('.view-toggle').forEach((b) => b.classList.toggle('active', !!state.visibleViews[b.dataset.viewtoggle]));
 }
 
 export function toggleSymmetry() {
@@ -462,13 +481,12 @@ function bindSidePanel() {
   }));
 
   // ---- drafting -> parts bridge ----
+  // no material dropdown (review: concepts stay separate) — regions promote
+  // at 18 mm and thickness is just a dimension in the inspector afterwards
   $('#btn-make-part').addEventListener('click', () => {
     if (!state.draftMode) return;
-    promoteFocusedSelection(+$('#panel-preset').value || 18);
+    promoteFocusedSelection(18);
   });
-  // picking a preset must not swallow the P hotkey — selects keep focus after
-  // change, and global hotkeys correctly ignore keys typed into form fields
-  $('#panel-preset').addEventListener('change', (e) => e.target.blur());
 
   $('#stamp-openface').addEventListener('change', (e) => {
     const layer = activeLayer();
@@ -812,6 +830,18 @@ export function initUI() {
     showToast(`${layer.name} added`);
   });
 
+  // furniture primitives: one click = one part on the ground
+  $$('.primitive-btn').forEach((b) => b.addEventListener('click', () => {
+    const layer = addPrimitive(b.dataset.primitive);
+    if (!layer) return;
+    openSidePanel();
+    showToast(`${layer.name} — drag in 3D to place · Shift-drag to lift · type dims in the panel`);
+  }));
+
+  $('#btn-clay').addEventListener('click', () => {
+    showToast('Clay tools (melt / fillet / carve) land in R3 — the Blend slider previews the feel');
+  });
+
   // collapse the whole Parts panel down to its title bar
   $('#parts-collapse').addEventListener('click', () => {
     $('#parts-panel').classList.toggle('panel-collapsed');
@@ -879,5 +909,6 @@ export function initUI() {
   makeDockable($('#mold-panel'), 'bottom-left', '.drag-grip');
 
   setTool(state.tool);
+  syncViewToggles(); // persp-only boot: cube faces start unlit
   applyLayout();
 }

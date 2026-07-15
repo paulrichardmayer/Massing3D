@@ -1,8 +1,19 @@
 # Massing3D
 
-A web-based 3D ideation tool for industrial designers. Draw 2D orthographic sketches (Top, Front, Side) and Massing3D turns the extruded profiles into smooth 3D volumes via a signed-distance-field pipeline — rapid visualization, fun ideation, and quick mesh export (OBJ/STL). Optimized for both mouse and tablet/stylus (iPad) input.
+A web-based 3D tool for **furniture design ideation** — think Spline/Womp/Sloyd, but for chairs, tables and lamps. You work in a single 3D perspective view: click a furniture primitive (**Slab, Board, Leg, Rod, Cylinder**) into the empty scene, then **drag parts directly in 3D** — they slide on the ground plane, `Shift`-drag lifts them, and everything snaps to the ground, part centers, and face-to-face contact (legs against a slab edge, a top landing exactly on the legs). Under the hood every part is a smooth signed-distance-field solid, so forms can melt together and export watertight (OBJ/STL).
 
-## Two modes
+Sketching lives in a drawer: press `Tab` to open the 2D drawing boards (Top/Front/Side) with Rhino-style drafting tools, draw a custom profile, make a part from it — `Tab` again returns you to the 3D room exactly as you left it.
+
+Roadmap (see `docs/manufacturing-methods-strategy.md`, Part III): **R1 ✅ 3D-first shell** · R2 parametric templates (Chair, Stool, Sofa, Table, Lamp) · R3 clay tools (melt/fillet/carve across parts) · R4 feature drawers (analyzers, cut list, DXF).
+
+## The 3D room (default)
+
+- The app boots to an **empty perspective view**. The toolbar holds a Select tool and five primitives — one click drops a grounded part, auto-placed clear of the others.
+- **Click** a part to select it; **drag** to move it on the floor; **`Shift`+drag** to lift. Snapping targets: ground, world center, other parts' centerlines, and exact face-to-face contact/stacking distances.
+- The **nav cube** (bottom center) mirrors the camera live — drag it to orbit, double-click a face to fly there, click faces to toggle ortho panes.
+- `Ctrl+Z` / `Ctrl+Y` undo/redo everything, including 3D moves.
+
+## Two modes (the sketching drawer)
 
 - **Quick Massing** (default) — what the rest of this README describes: closed
   sketches instantly become 3D form via the part's manufacturing process.

@@ -270,22 +270,48 @@
         <span class="text-xs">Draft</span>
       </button>
       <div class="w-px h-5 bg-zinc-700 mx-0.5"></div>
-      <button id="tool-nav" class="menu-btn tool-btn" data-tool="nav" data-tip="Navigate — pan & zoom the view">
-        <svg viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
-      </button>
-      <button id="tool-select" class="menu-btn tool-btn" data-tool="select" data-tip="Select / Move box layer (W)">
+      <button id="tool-select" class="menu-btn tool-btn" data-tool="select" data-tip="Select / Move (W) — click a part in the 3D view, drag to slide it, Shift-drag to lift · snaps to ground, tops, and neighbors">
         <svg viewBox="0 0 24 24"><path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51L3 3Z"/></svg>
       </button>
-      <button id="tool-rect" class="menu-btn tool-btn" data-tool="rect" data-tip="Rectangle Tool (R) — drag corner-to-corner · Shift = square · after release, scroll or [ ] rounds corners, click commits · double-click a box to fill it">
+      <div class="w-px h-5 bg-zinc-700 mx-0.5"></div>
+      <button class="menu-btn primitive-btn" data-primitive="slab" data-tip="Slab — a table top / seat panel (600 × 25 × 400 mm)">
+        <svg viewBox="0 0 24 24"><path d="M3 10h18v5H3z"/></svg>
+        <span class="text-xs">Slab</span>
+      </button>
+      <button class="menu-btn primitive-btn" data-primitive="board" data-tip="Board — an upright panel (400 × 300 × 18 mm)">
+        <svg viewBox="0 0 24 24"><path d="M6 4h12v16H6z"/></svg>
+        <span class="text-xs">Board</span>
+      </button>
+      <button class="menu-btn primitive-btn" data-primitive="leg" data-tip="Leg — square section, 40 × 450 mm">
+        <svg viewBox="0 0 24 24"><path d="M10 3h4v18h-4z"/></svg>
+        <span class="text-xs">Leg</span>
+      </button>
+      <button class="menu-btn primitive-btn" data-primitive="roundleg" data-tip="Round leg — ⌀40 × 450 mm">
+        <svg viewBox="0 0 24 24"><path d="M10 4h4v16h-4z" rx="2"/><ellipse cx="12" cy="4" rx="2" ry="1"/><ellipse cx="12" cy="20" rx="2" ry="1"/></svg>
+        <span class="text-xs">Rod</span>
+      </button>
+      <button class="menu-btn primitive-btn" data-primitive="cylinder" data-tip="Cylinder — ⌀150 × 300 mm">
+        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12M19 6v12"/><path d="M5 18a7 2.5 0 0 0 14 0"/></svg>
+        <span class="text-xs">Cyl</span>
+      </button>
+      <button id="btn-clay" class="menu-btn" data-tip="Clay — melt selected parts together, fillet, carve (coming in R3)">
+        <svg viewBox="0 0 24 24"><path d="M7 20c-2.5 0-4-1.8-4-4 0-3 2.5-4 3-6 .5-2 2-5 6-5s5.5 3 6 5c.5 2 3 3 3 6 0 2.2-1.5 4-4 4H7Z"/></svg>
+        <span class="text-xs">Clay</span>
+      </button>
+      <div class="w-px h-5 bg-zinc-700 mx-0.5"></div>
+      <button id="tool-nav" class="menu-btn tool-btn sketch-only" data-tool="nav" data-tip="Navigate — pan & zoom the view">
+        <svg viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+      </button>
+      <button id="tool-rect" class="menu-btn tool-btn sketch-only" data-tool="rect" data-tip="Rectangle Tool (R) — drag corner-to-corner · Shift = square · after release, scroll or [ ] rounds corners, click commits · double-click a box to fill it">
         <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="2.5"/></svg>
       </button>
-      <button id="tool-ellipse" class="menu-btn tool-btn" data-tool="ellipse" data-tip="Ellipse Tool (E) — drag the bounding box · Shift = circle · double-click a box to fill it (instant cylinder)">
+      <button id="tool-ellipse" class="menu-btn tool-btn sketch-only" data-tool="ellipse" data-tip="Ellipse Tool (E) — drag the bounding box · Shift = circle · double-click a box to fill it (instant cylinder)">
         <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg>
       </button>
-      <button id="tool-bezier" class="menu-btn massing-only tool-btn" data-tool="bezier" data-tip="Bezier Line Tool (L) — click to place anchors, drag for handles, click first point to close">
+      <button id="tool-bezier" class="menu-btn massing-only sketch-only tool-btn" data-tool="bezier" data-tip="Bezier Line Tool (L) — click to place anchors, drag for handles, click first point to close">
         <svg viewBox="0 0 24 24"><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><path d="M7 18C12 16 16 12 17.5 7"/><path d="M3 9h6M15 21h6" stroke-dasharray="2 2"/></svg>
       </button>
-      <button id="tool-freehand" class="menu-btn tool-btn" data-tool="freehand" data-tip="Freehand Sketch Tool (F) — draw with mouse or stylus, auto-smoothed">
+      <button id="tool-freehand" class="menu-btn tool-btn sketch-only" data-tool="freehand" data-tip="Freehand Sketch Tool (F) — draw with mouse or stylus, auto-smoothed">
         <svg viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3Z"/></svg>
       </button>
       <button class="menu-btn tool-btn draft-only" data-tool="line" data-tip="Line — click start, click end · Shift = ortho lock (45° steps) · snaps to endpoints, midpoints & grid">
@@ -304,25 +330,18 @@
         <svg viewBox="0 0 24 24"><path d="M3 18c5 3 6-11 11-9 3 1.2 4 5 7 4"/><circle cx="3" cy="18" r="1.6"/><circle cx="21" cy="13" r="1.6"/></svg>
       </button>
       <span class="menu-sep draft-only"></span>
-      <select id="panel-preset" class="draft-only bg-zinc-800 border border-zinc-700 rounded-md text-xs px-1.5 py-1" data-tip="Panel material — the thickness a promoted region gets">
-        <option value="18">18 mm ply</option>
-        <option value="12">12 mm MDF</option>
-        <option value="25">25 mm hardwood</option>
-        <option value="6">6 mm acrylic</option>
-        <option value="3">3 mm steel</option>
-      </select>
       <button id="btn-make-part" class="menu-btn draft-only" data-tip="Make Part (P) — the selected CLOSED region becomes a solid panel of the chosen thickness (an extrusion; profile stays linked to the drawing's shape)">
         <svg viewBox="0 0 24 24"><path d="M4 16 12 20l8-4V8l-8-4-8 4v8Z"/><path d="M4 8l8 4 8-4M12 12v8"/></svg>
         <span class="text-xs">Make Part</span>
       </button>
       <span class="menu-sep"></span>
-      <button id="btn-interpret" class="menu-btn massing-only" data-tip="Clean Up (Q) — snap the focused view's freehand profile to crisp lines, arcs & rounded corners · press again to toggle back to the raw stroke">
+      <button id="btn-interpret" class="menu-btn massing-only sketch-only" data-tip="Clean Up (Q) — snap the focused view's freehand profile to crisp lines, arcs & rounded corners · press again to toggle back to the raw stroke">
         <svg viewBox="0 0 24 24"><path d="M15 4V2M15 10V8M11 6H9M21 6h-2M19.5 9.5 18 8M11.5 1.5 10 0M4 22l11-11M14.5 4.5 19 9"/></svg>
       </button>
-      <button id="toggle-auto-interpret" class="menu-btn massing-only" data-tip="Auto Clean-Up — interpret freehand strokes the moment you finish them (default: on for mouse, off for stylus)">
+      <button id="toggle-auto-interpret" class="menu-btn massing-only sketch-only" data-tip="Auto Clean-Up — interpret freehand strokes the moment you finish them (default: on for mouse, off for stylus)">
         <svg viewBox="0 0 24 24"><path d="M5 3 3 5M19 3l2 2M9 11l-4 4 4 4M5 15h6a4 4 0 0 0 4-4V5"/></svg>
       </button>
-      <button id="toggle-symmetry" class="menu-btn massing-only" data-tip="Symmetry Mode (S) — mirror sketches across the vertical center of the box">
+      <button id="toggle-symmetry" class="menu-btn massing-only sketch-only" data-tip="Symmetry Mode (S) — mirror sketches across the vertical center of the box">
         <svg viewBox="0 0 24 24"><path d="M12 3v18" stroke-dasharray="3 3"/><path d="M8 7 4 12l4 5M16 7l4 5-4 5"/></svg>
       </button>
     </div>

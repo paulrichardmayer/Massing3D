@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 import { Brush, Evaluator, INTERSECTION, SUBTRACTION } from 'three-bvh-csg';
-import { state, on, emit, kForLayer } from './state.js';
+import { state, on, emit, kForLayer, recordPartMove, touch, getLayer } from './state.js';
 import { tessellatePath } from './interpret.js';
 import { meshPart, compilePart } from './sdf.js';
 import { patchPrintMaterial, syncPrintUniforms, printUniforms, computeSupportStats } from './printpreview.js';
@@ -83,10 +83,114 @@ export function initScene(containerEl) {
 const target = new THREE.Vector3(0, 60, 0);
 const spherical = new THREE.Spherical();
 
+// ---------------- 3D direct manipulation (Part III / R1) ----------------
+// LMB in the perspective view: click a part to select it, drag to move it on
+// the ground plane, hold Shift while dragging to lift/lower. LMB on empty
+// space orbits (Womp-style). Moves snap to the ground, other parts' tops
+// (stacking), adjacency, and center alignment — and are undoable.
+
+const raycaster = new THREE.Raycaster();
+
+function pointerRay(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  raycaster.setFromCamera({
+    x: ((e.clientX - r.left) / r.width) * 2 - 1,
+    y: -((e.clientY - r.top) / r.height) * 2 + 1,
+  }, camera);
+  return raycaster;
+}
+
+function pickPart(e) {
+  const meshes = [];
+  for (const [id, entry] of layerGroups) {
+    if (entry.mesh && entry.group.visible) {
+      entry.mesh.userData.layerId = id;
+      meshes.push(entry.mesh);
+    }
+  }
+  const hits = pointerRay(e).intersectObjects(meshes, false);
+  return hits.length ? { layerId: hits[0].object.userData.layerId, point: hits[0].point } : null;
+}
+
+// Snap one axis of a proposed position against the other parts: adjacency
+// (touching faces), center alignment, and for Y also the ground and stacking.
+function snapAxis(layer, axis, dim, value, tol = 10) {
+  let best = value, bestD = tol;
+  const half = layer.box[dim] / 2;
+  const consider = (v) => {
+    const d = Math.abs(v - value);
+    if (d < bestD) { bestD = d; best = v; }
+  };
+  if (axis === 'y') { consider(half); }
+  for (const o of state.layers) {
+    if (o.id === layer.id || !o.visible) continue;
+    const oHalf = o.box[dim] / 2;
+    consider(o.position[axis]);                    // centers aligned
+    consider(o.position[axis] + oHalf + half);     // resting against / on top
+    consider(o.position[axis] - oHalf - half);
+  }
+  return best;
+}
+
+let partDrag = null; // { layer, origPos, grabOffset: Vector3, planeY, moved }
+const dragPlane = new THREE.Plane();
+const dragHit = new THREE.Vector3();
+
+function beginPartDrag(hit, e) {
+  const layer = getLayer(hit.layerId);
+  if (!layer) return false;
+  if (state.activeLayerId !== layer.id) {
+    state.activeLayerId = layer.id;
+    emit('change'); // parts panel follows the 3D selection
+  }
+  partDrag = {
+    layer,
+    origPos: { ...layer.position },
+    planeY: hit.point.y,
+    grabOffset: new THREE.Vector3(
+      layer.position.x - hit.point.x, 0, layer.position.z - hit.point.z),
+    liftBase: { y: layer.position.y, pointY: hit.point.y },
+    moved: false,
+  };
+  return true;
+}
+
+function updatePartDrag(e) {
+  const { layer } = partDrag;
+  if (e.shiftKey) {
+    // lift: intersect a camera-facing vertical plane through the part
+    const n = new THREE.Vector3().subVectors(camera.position, new THREE.Vector3(layer.position.x, 0, layer.position.z));
+    n.y = 0;
+    if (n.lengthSq() < 1e-6) return;
+    n.normalize();
+    dragPlane.setFromNormalAndCoplanarPoint(n, new THREE.Vector3(layer.position.x, partDrag.planeY, layer.position.z));
+    if (!pointerRay(e).ray.intersectPlane(dragPlane, dragHit)) return;
+    const y = partDrag.liftBase.y + (dragHit.y - partDrag.liftBase.pointY);
+    layer.position.y = Math.max(layer.box.h / 2, snapAxis(layer, 'y', 'h', y, 12));
+  } else {
+    // slide on the horizontal plane the part was grabbed at
+    dragPlane.set(new THREE.Vector3(0, 1, 0), -partDrag.planeY);
+    if (!pointerRay(e).ray.intersectPlane(dragPlane, dragHit)) return;
+    layer.position.x = snapAxis(layer, 'x', 'w', dragHit.x + partDrag.grabOffset.x);
+    layer.position.z = snapAxis(layer, 'z', 'd', dragHit.z + partDrag.grabOffset.z);
+  }
+  partDrag.moved = true;
+  emit('change'); // outlines + ortho ghosts track live; meshes move via sync
+}
+
+function endPartDrag() {
+  const { layer, origPos, moved } = partDrag;
+  partDrag = null;
+  if (moved) {
+    recordPartMove(layer.id, origPos);
+    touch(layer);
+  }
+}
+
 function setupNavigation() {
   const el = renderer.domElement;
   el.style.touchAction = 'none';
-  let mode = null; // 'orbit' | 'pan' | 'dolly'
+  let mode = null; // 'orbit' | 'pan' | 'dolly' | 'movePart'
   let lastX = 0, lastY = 0;
 
   el.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -97,9 +201,12 @@ function setupNavigation() {
     } else if (e.button === 1) {
       mode = 'pan';
     } else if (e.button === 0) {
-      // Tool override fallback: LMB only navigates with Alt held; drawing
-      // tools never draw in the perspective view.
-      mode = e.altKey ? 'orbit' : null;
+      if (e.altKey) {
+        mode = 'orbit';
+      } else {
+        const hit = pickPart(e);
+        mode = hit && beginPartDrag(hit, e) ? 'movePart' : 'orbit';
+      }
     }
     if (mode) {
       snapAnim = null; // user takes over from any nav-cube fly-to
@@ -113,6 +220,10 @@ function setupNavigation() {
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     lastX = e.clientX; lastY = e.clientY;
 
+    if (mode === 'movePart') {
+      if (partDrag) updatePartDrag(e);
+      return;
+    }
     if (mode === 'orbit') {
       const offset = camera.position.clone().sub(target);
       spherical.setFromVector3(offset);
@@ -136,6 +247,7 @@ function setupNavigation() {
   });
 
   const end = (e) => {
+    if (mode === 'movePart' && partDrag) endPartDrag();
     mode = null;
     try { el.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
   };
